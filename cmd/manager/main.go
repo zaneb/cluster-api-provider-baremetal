@@ -20,12 +20,16 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	bmoapis "github.com/metalkube/baremetal-operator/pkg/apis"
 	"github.com/metalkube/cluster-api-provider-baremetal/pkg/apis"
 	"github.com/metalkube/cluster-api-provider-baremetal/pkg/cloud/baremetal/actuators/machine"
 	clusterapis "github.com/openshift/cluster-api/pkg/apis"
 	capimachine "github.com/openshift/cluster-api/pkg/controller/machine"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/rest"
 	"k8s.io/klog"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -46,6 +50,12 @@ func main() {
 	cfg := config.GetConfigOrDie()
 	if cfg == nil {
 		panic(fmt.Errorf("GetConfigOrDie didn't die"))
+	}
+
+	err := waitForAPIs(cfg)
+	if err != nil {
+		entryLog.Error(err, "unable to discover required APIs")
+		os.Exit(1)
 	}
 
 	// Setup a Manager
@@ -80,4 +90,31 @@ func main() {
 		entryLog.Error(err, "unable to run manager")
 		os.Exit(1)
 	}
+}
+
+func waitForAPIs(cfg *rest.Config) error {
+	log := logf.Log.WithName("baremetal-controller-manager")
+
+	c, err := discovery.NewDiscoveryClientForConfig(cfg)
+	if err != nil {
+		return err
+	}
+
+	metalkubeGV := schema.GroupVersion{
+		Group:   "metalkube.org",
+		Version: "v1alpha1",
+	}
+
+	for {
+		err = discovery.ServerSupportsVersion(c, metalkubeGV)
+		if err != nil {
+			log.Info(fmt.Sprintf("Waiting for API group %v to be available: %v", metalkubeGV, err))
+			time.Sleep(time.Second * 10)
+			continue
+		}
+		log.Info(fmt.Sprintf("Found API group %v", metalkubeGV))
+		break
+	}
+
+	return nil
 }
