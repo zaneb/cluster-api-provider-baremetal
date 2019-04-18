@@ -9,7 +9,7 @@ Once your cluster is running, the CRDs defined by the `cluster-api` project
 need to be added to the cluster.
 
 ```bash
-kubectl apply -f vendor/sigs.k8s.io/cluster-api/config/crds/
+kubectl apply -k vendor/sigs.k8s.io/cluster-api/config/crds/
 ```
 
 ## Add CRDs from baremetal-operator
@@ -27,11 +27,11 @@ When a `Machine` gets created, the actuator looks for an available
 `BareMetalHost` to claim and then sets it to be provisioned to fulfill the
 request expressed by the `Machine`.  Before creating a `Machine`, we can create
 a dummy `BareMetalHost` object.  There’s no requirement to actually run the
-`baremetal-operator` to test the reconciliation logic of the acutator.
+`baremetal-operator` to test the reconciliation logic of the actuator.
 
-```bash
-kubectl apply -f vendor/github.com/metalkube/baremetal-operator/deploy/crds/metalkube_v1alpha1_baremetalhost_cr.yaml
-```
+Refer to the [baremetal-operator developer
+documentation](https://github.com/metalkube/baremetal-operator/blob/master/docs/dev-setup.md)
+for instructions and tools for creating BareMetalHost objects.
 
 ## Run the Actuator
 
