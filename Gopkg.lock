@@ -327,7 +327,7 @@
 
 [[projects]]
   branch = "openshift-4.0-cluster-api-0.0.0-alpha.4"
-  digest = "1:3cf9fcd481210b6c5d278afdfe2a8b78e7c29a08d439a8bab0492cf93d6ddd28"
+  digest = "1:7ac2d0246b09e9066ff66824b8686d4dd8ff6158cf7cbd058972a1a1e41b7df9"
   name = "github.com/openshift/cluster-api"
   packages = [
     "pkg/apis",
@@ -340,7 +340,7 @@
     "pkg/util",
   ]
   pruneopts = "T"
-  revision = "5e580f96e63e5db1fc8095ca5f587716a4a8d9e9"
+  revision = "261136cbb6fbf4cf27f00b9da13a17f27ad4e1b1"
 
 [[projects]]
   branch = "master"
@@ -999,6 +999,7 @@
     "github.com/onsi/gomega",
     "github.com/openshift/cluster-api/pkg/apis",
     "github.com/openshift/cluster-api/pkg/apis/machine/v1beta1",
+    "github.com/openshift/cluster-api/pkg/controller/error",
     "github.com/openshift/cluster-api/pkg/controller/machine",
     "golang.org/x/net/context",
     "k8s.io/api/core/v1",
@@ -1008,6 +1009,7 @@
     "k8s.io/apimachinery/pkg/runtime",
     "k8s.io/apimachinery/pkg/runtime/schema",
     "k8s.io/apimachinery/pkg/types",
+    "k8s.io/client-go/discovery",
     "k8s.io/client-go/kubernetes/scheme",
     "k8s.io/client-go/plugin/pkg/client/auth/gcp",
     "k8s.io/client-go/rest",
