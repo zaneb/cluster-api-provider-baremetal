@@ -24,6 +24,7 @@ import (
 	"time"
 
 	bmh "github.com/metalkube/baremetal-operator/pkg/apis/metalkube/v1alpha1"
+	clusterv1 "github.com/openshift/cluster-api/pkg/apis/cluster/v1alpha1"
 	machinev1 "github.com/openshift/cluster-api/pkg/apis/machine/v1beta1"
 	clustererror "github.com/openshift/cluster-api/pkg/controller/error"
 	corev1 "k8s.io/api/core/v1"
@@ -68,7 +69,7 @@ func NewActuator(params ActuatorParams) (*Actuator, error) {
 }
 
 // Create creates a machine and is invoked by the Machine Controller
-func (a *Actuator) Create(ctx context.Context, cluster *machinev1.Cluster, machine *machinev1.Machine) error {
+func (a *Actuator) Create(ctx context.Context, cluster *clusterv1.Cluster, machine *machinev1.Machine) error {
 	log.Printf("Creating machine %v .", machine.Name)
 	// look for associated BMH
 	host, err := a.getHost(ctx, machine)
@@ -101,7 +102,7 @@ func (a *Actuator) Create(ctx context.Context, cluster *machinev1.Cluster, machi
 }
 
 // Delete deletes a machine and is invoked by the Machine Controller
-func (a *Actuator) Delete(ctx context.Context, cluster *machinev1.Cluster, machine *machinev1.Machine) error {
+func (a *Actuator) Delete(ctx context.Context, cluster *clusterv1.Cluster, machine *machinev1.Machine) error {
 	log.Printf("Deleting machine %v .", machine.Name)
 	host, err := a.getHost(ctx, machine)
 	if err != nil {
@@ -125,7 +126,7 @@ func (a *Actuator) Delete(ctx context.Context, cluster *machinev1.Cluster, machi
 }
 
 // Update updates a machine and is invoked by the Machine Controller
-func (a *Actuator) Update(ctx context.Context, cluster *machinev1.Cluster, machine *machinev1.Machine) error {
+func (a *Actuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machine *machinev1.Machine) error {
 	log.Printf("Updating machine %v .", machine.Name)
 	host, err := a.getHost(ctx, machine)
 	if err != nil {
@@ -144,7 +145,7 @@ func (a *Actuator) Update(ctx context.Context, cluster *machinev1.Cluster, machi
 }
 
 // Exists tests for the existence of a machine and is invoked by the Machine Controller
-func (a *Actuator) Exists(ctx context.Context, cluster *machinev1.Cluster, machine *machinev1.Machine) (bool, error) {
+func (a *Actuator) Exists(ctx context.Context, cluster *clusterv1.Cluster, machine *machinev1.Machine) (bool, error) {
 	log.Printf("Checking if machine %v exists.", machine.Name)
 	host, err := a.getHost(ctx, machine)
 	if err != nil {
@@ -163,13 +164,13 @@ func (a *Actuator) Exists(ctx context.Context, cluster *machinev1.Cluster, machi
 // (https://github.com/kubernetes-sigs/cluster-api/issues/160).
 
 // GetIP returns IP address of the machine in the cluster.
-func (a *Actuator) GetIP(cluster *machinev1.Cluster, machine *machinev1.Machine) (string, error) {
+func (a *Actuator) GetIP(cluster *clusterv1.Cluster, machine *machinev1.Machine) (string, error) {
 	log.Printf("Getting IP of machine %v .", machine.Name)
 	return "", fmt.Errorf("TODO: Not yet implemented")
 }
 
 // GetKubeConfig gets a kubeconfig from the running control plane.
-func (a *Actuator) GetKubeConfig(cluster *machinev1.Cluster, controlPlaneMachine *machinev1.Machine) (string, error) {
+func (a *Actuator) GetKubeConfig(cluster *clusterv1.Cluster, controlPlaneMachine *machinev1.Machine) (string, error) {
 	log.Printf("Getting IP of machine %v .", controlPlaneMachine.Name)
 	return "", fmt.Errorf("TODO: Not yet implemented")
 }
