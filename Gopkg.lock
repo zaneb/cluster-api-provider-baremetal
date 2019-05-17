@@ -250,14 +250,14 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:70f8d672ed0f89f3b1bd121fa264d6ad3cf20ab5e14a0a20c74a63f7f280d884"
-  name = "github.com/metalkube/baremetal-operator"
+  digest = "1:e8f7dec9267de068cce426a0167fa5d1ae96dfe627959dfb2eed6c92fc39ad94"
+  name = "github.com/metal3-io/baremetal-operator"
   packages = [
     "pkg/apis",
-    "pkg/apis/metalkube/v1alpha1",
+    "pkg/apis/metal3/v1alpha1",
   ]
   pruneopts = "T"
-  revision = "96ca68ea37e4e8c64ae53d872d14412fa95b9ae0"
+  revision = "9140d7b451b41c2d80c6222991bbc00b0a75313c"
 
 [[projects]]
   digest = "1:33422d238f147d247752996a26574ac48dcf472976eda7f5134015f06bf16563"
@@ -993,8 +993,8 @@
   analyzer-version = 1
   input-imports = [
     "github.com/emicklei/go-restful",
-    "github.com/metalkube/baremetal-operator/pkg/apis",
-    "github.com/metalkube/baremetal-operator/pkg/apis/metalkube/v1alpha1",
+    "github.com/metal3-io/baremetal-operator/pkg/apis",
+    "github.com/metal3-io/baremetal-operator/pkg/apis/metal3/v1alpha1",
     "github.com/onsi/ginkgo",
     "github.com/onsi/gomega",
     "github.com/openshift/cluster-api/pkg/apis",
@@ -1031,6 +1031,7 @@
     "sigs.k8s.io/controller-runtime/pkg/source",
     "sigs.k8s.io/controller-tools/cmd/controller-gen",
     "sigs.k8s.io/testing_frameworks/integration",
+    "sigs.k8s.io/yaml",
   ]
   solver-name = "gps-cdcl"
   solver-version = 1

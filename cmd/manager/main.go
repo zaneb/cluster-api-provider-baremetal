@@ -22,9 +22,9 @@ import (
 	"os"
 	"time"
 
-	bmoapis "github.com/metalkube/baremetal-operator/pkg/apis"
-	"github.com/metalkube/cluster-api-provider-baremetal/pkg/apis"
-	"github.com/metalkube/cluster-api-provider-baremetal/pkg/cloud/baremetal/actuators/machine"
+	bmoapis "github.com/metal3-io/baremetal-operator/pkg/apis"
+	"github.com/metal3-io/cluster-api-provider-baremetal/pkg/apis"
+	"github.com/metal3-io/cluster-api-provider-baremetal/pkg/cloud/baremetal/actuators/machine"
 	clusterapis "github.com/openshift/cluster-api/pkg/apis"
 	capimachine "github.com/openshift/cluster-api/pkg/controller/machine"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -100,19 +100,19 @@ func waitForAPIs(cfg *rest.Config) error {
 		return err
 	}
 
-	metalkubeGV := schema.GroupVersion{
-		Group:   "metalkube.org",
+	metal3GV := schema.GroupVersion{
+		Group:   "metal3.io",
 		Version: "v1alpha1",
 	}
 
 	for {
-		err = discovery.ServerSupportsVersion(c, metalkubeGV)
+		err = discovery.ServerSupportsVersion(c, metal3GV)
 		if err != nil {
-			log.Info(fmt.Sprintf("Waiting for API group %v to be available: %v", metalkubeGV, err))
+			log.Info(fmt.Sprintf("Waiting for API group %v to be available: %v", metal3GV, err))
 			time.Sleep(time.Second * 10)
 			continue
 		}
-		log.Info(fmt.Sprintf("Found API group %v", metalkubeGV))
+		log.Info(fmt.Sprintf("Found API group %v", metal3GV))
 		break
 	}
 
