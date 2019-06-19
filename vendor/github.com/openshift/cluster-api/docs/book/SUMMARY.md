@@ -14,7 +14,6 @@
 * [Machine Controller](common_code/machine_controller.md)
 * [MachineSet Controller](common_code/machineset_controller.md)
 * [MachineDeployment Controller](common_code/machinedeployment_controller.md)
-* [Node Controller](common_code/node_controller.md)
 
 ## Creating a New Provider
 
