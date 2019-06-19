@@ -73,13 +73,39 @@ func TestChooseHost(t *testing.T) {
 			ErrorMessage: "this host is discovered and not usable",
 		},
 	}
+	host_with_label := bmh.BareMetalHost{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "host_with_label",
+			Namespace: "myns",
+			Labels:    map[string]string{"key1": "value1"},
+		},
+	}
 
-	_, providerSpec := newConfig(t, "")
+	config, providerSpec := newConfig(t, "", map[string]string{}, []bmv1alpha1.HostSelectorRequirement{})
+	config2, providerSpec2 := newConfig(t, "", map[string]string{"key1": "value1"}, []bmv1alpha1.HostSelectorRequirement{})
+	config3, providerSpec3 := newConfig(t, "", map[string]string{"boguskey": "value"}, []bmv1alpha1.HostSelectorRequirement{})
+	config4, providerSpec4 := newConfig(t, "", map[string]string{},
+		[]bmv1alpha1.HostSelectorRequirement{
+			bmv1alpha1.HostSelectorRequirement{
+				Key:      "key1",
+				Operator: "in",
+				Values:   []string{"abc", "value1", "123"},
+			},
+		})
+	config5, providerSpec5 := newConfig(t, "", map[string]string{},
+		[]bmv1alpha1.HostSelectorRequirement{
+			bmv1alpha1.HostSelectorRequirement{
+				Key:      "key1",
+				Operator: "pancakes",
+				Values:   []string{"abc", "value1", "123"},
+			},
+		})
 
 	testCases := []struct {
 		Machine          machinev1.Machine
 		Hosts            []runtime.Object
 		ExpectedHostName string
+		Config           *bmv1alpha1.BareMetalMachineProviderSpec
 	}{
 		{
 			// should pick host2, which lacks a MachineRef
@@ -135,6 +161,95 @@ func TestChooseHost(t *testing.T) {
 			Hosts:            []runtime.Object{&host1, &host3, &host4},
 			ExpectedHostName: "",
 		},
+		{
+			// Can choose hosts with a label, even without a label selector
+			Machine: machinev1.Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "machine1",
+					Namespace: "myns",
+				},
+				Spec: machinev1.MachineSpec{
+					ProviderSpec: providerSpec,
+				},
+			},
+			Hosts:            []runtime.Object{&host_with_label},
+			ExpectedHostName: host_with_label.Name,
+		},
+		{
+			// Choose the host with the right label
+			Machine: machinev1.Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "machine1",
+					Namespace: "myns",
+				},
+				Spec: machinev1.MachineSpec{
+					ProviderSpec: providerSpec2,
+				},
+			},
+			Hosts:            []runtime.Object{&host2, &host_with_label},
+			ExpectedHostName: host_with_label.Name,
+			Config:           config2,
+		},
+		{
+			// No host that matches required label
+			Machine: machinev1.Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "machine1",
+					Namespace: "myns",
+				},
+				Spec: machinev1.MachineSpec{
+					ProviderSpec: providerSpec3,
+				},
+			},
+			Hosts:            []runtime.Object{&host2, &host_with_label},
+			ExpectedHostName: "",
+			Config:           config3,
+		},
+		{
+			// Host that matches a matchExpression
+			Machine: machinev1.Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "machine1",
+					Namespace: "myns",
+				},
+				Spec: machinev1.MachineSpec{
+					ProviderSpec: providerSpec4,
+				},
+			},
+			Hosts:            []runtime.Object{&host2, &host_with_label},
+			ExpectedHostName: host_with_label.Name,
+			Config:           config4,
+		},
+		{
+			// No Host available that matches a matchExpression
+			Machine: machinev1.Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "machine1",
+					Namespace: "myns",
+				},
+				Spec: machinev1.MachineSpec{
+					ProviderSpec: providerSpec4,
+				},
+			},
+			Hosts:            []runtime.Object{&host2},
+			ExpectedHostName: "",
+			Config:           config4,
+		},
+		{
+			// No host chosen given an Invalid match expression
+			Machine: machinev1.Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "machine1",
+					Namespace: "myns",
+				},
+				Spec: machinev1.MachineSpec{
+					ProviderSpec: providerSpec5,
+				},
+			},
+			Hosts:            []runtime.Object{&host2, &host_with_label},
+			ExpectedHostName: "",
+			Config:           config5,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -146,8 +261,11 @@ func TestChooseHost(t *testing.T) {
 		if err != nil {
 			t.Errorf("%v", err)
 		}
-
-		result, err := actuator.chooseHost(context.TODO(), &tc.Machine)
+		cfg := tc.Config
+		if cfg == nil {
+			cfg = config
+		}
+		result, err := actuator.chooseHost(context.TODO(), &tc.Machine, cfg)
 		if tc.ExpectedHostName == "" {
 			if result != nil {
 				t.Error("found host when none should have been available")
@@ -180,7 +298,7 @@ func TestSetHostSpec(t *testing.T) {
 	} {
 
 		// test data
-		config, providerSpec := newConfig(t, tc.UserDataNamespace)
+		config, providerSpec := newConfig(t, tc.UserDataNamespace, map[string]string{}, []bmv1alpha1.HostSelectorRequirement{})
 		host := bmh.BareMetalHost{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "host2",
@@ -664,7 +782,7 @@ func TestConfigFromProviderSpec(t *testing.T) {
 	}
 }
 
-func newConfig(t *testing.T, UserDataNamespace string) (*bmv1alpha1.BareMetalMachineProviderSpec, machinev1.ProviderSpec) {
+func newConfig(t *testing.T, UserDataNamespace string, labels map[string]string, reqs []bmv1alpha1.HostSelectorRequirement) (*bmv1alpha1.BareMetalMachineProviderSpec, machinev1.ProviderSpec) {
 	config := bmv1alpha1.BareMetalMachineProviderSpec{
 		Image: bmv1alpha1.Image{
 			URL:      testImageURL,
@@ -674,6 +792,10 @@ func newConfig(t *testing.T, UserDataNamespace string) (*bmv1alpha1.BareMetalMac
 			Name:      testUserDataSecretName,
 			Namespace: UserDataNamespace,
 		},
+		HostSelector: bmv1alpha1.HostSelector{
+			MatchLabels:      labels,
+			MatchExpressions: reqs,
+		},
 	}
 	out, err := yaml.Marshal(&config)
 	if err != nil {
@@ -682,5 +804,317 @@ func newConfig(t *testing.T, UserDataNamespace string) (*bmv1alpha1.BareMetalMac
 	}
 	return &config, machinev1.ProviderSpec{
 		Value: &runtime.RawExtension{Raw: out},
+	}
+}
+
+func TestUpdateMachineStatus(t *testing.T) {
+	scheme := runtime.NewScheme()
+	clusterapis.AddToScheme(scheme)
+
+	nic1 := bmh.NIC{
+		IP: "192.168.1.1",
+	}
+
+	nic2 := bmh.NIC{
+		IP: "172.0.20.2",
+	}
+
+	testCases := []struct {
+		Host            *bmh.BareMetalHost
+		Machine         *machinev1.Machine
+		ExpectedMachine machinev1.Machine
+	}{
+		{
+			// machine status updated
+			Host: &bmh.BareMetalHost{
+				Status: bmh.BareMetalHostStatus{
+					HardwareDetails: &bmh.HardwareDetails{
+						NIC: []bmh.NIC{nic1, nic2},
+					},
+				},
+			},
+			Machine: &machinev1.Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "mymachine",
+					Namespace: "myns",
+				},
+				Status: machinev1.MachineStatus{},
+			},
+			ExpectedMachine: machinev1.Machine{
+				Status: machinev1.MachineStatus{
+					Addresses: []corev1.NodeAddress{
+						corev1.NodeAddress{
+							Address: "192.168.1.1",
+							Type:    "InternalIP",
+						},
+						corev1.NodeAddress{
+							Address: "172.0.20.2",
+							Type:    "InternalIP",
+						},
+					},
+				},
+			},
+		},
+		{
+			// machine status unchanged
+			Host: &bmh.BareMetalHost{
+				Status: bmh.BareMetalHostStatus{
+					HardwareDetails: &bmh.HardwareDetails{
+						NIC: []bmh.NIC{nic1, nic2},
+					},
+				},
+			},
+			Machine: &machinev1.Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "mymachine",
+					Namespace: "myns",
+				},
+				Status: machinev1.MachineStatus{
+					Addresses: []corev1.NodeAddress{
+						corev1.NodeAddress{
+							Address: "192.168.1.1",
+							Type:    "InternalIP",
+						},
+						corev1.NodeAddress{
+							Address: "172.0.20.2",
+							Type:    "InternalIP",
+						},
+					},
+				},
+			},
+			ExpectedMachine: machinev1.Machine{
+				Status: machinev1.MachineStatus{
+					Addresses: []corev1.NodeAddress{
+						corev1.NodeAddress{
+							Address: "192.168.1.1",
+							Type:    "InternalIP",
+						},
+						corev1.NodeAddress{
+							Address: "172.0.20.2",
+							Type:    "InternalIP",
+						},
+					},
+				},
+			},
+		},
+		{
+			// machine status unchanged
+			Host: &bmh.BareMetalHost{},
+			Machine: &machinev1.Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "mymachine",
+					Namespace: "myns",
+				},
+				Status: machinev1.MachineStatus{},
+			},
+			ExpectedMachine: machinev1.Machine{
+				Status: machinev1.MachineStatus{},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		c := fakeclient.NewFakeClientWithScheme(scheme)
+		if tc.Machine != nil {
+			c.Create(context.TODO(), tc.Machine)
+		}
+		actuator, err := NewActuator(ActuatorParams{
+			Client: c,
+		})
+		if err != nil {
+			t.Error(err)
+		}
+
+		err = actuator.updateMachineStatus(context.TODO(), tc.Machine, tc.Host)
+		if err != nil {
+			t.Errorf("unexpected error %v", err)
+		}
+		key := client.ObjectKey{
+			Name:      tc.Machine.Name,
+			Namespace: tc.Machine.Namespace,
+		}
+		machine := machinev1.Machine{}
+		c.Get(context.TODO(), key, &machine)
+
+		if &tc.Machine != nil {
+			key := client.ObjectKey{
+				Name:      tc.Machine.Name,
+				Namespace: tc.Machine.Namespace,
+			}
+			machine := machinev1.Machine{}
+			c.Get(context.TODO(), key, &machine)
+
+			if tc.Machine.Status.Addresses != nil {
+				for i, address := range tc.ExpectedMachine.Status.Addresses {
+					if address != machine.Status.Addresses[i] {
+						t.Errorf("expected Address %v, found %v", address, machine.Status.Addresses[i])
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestApplyMachineStatus(t *testing.T) {
+	scheme := runtime.NewScheme()
+	clusterapis.AddToScheme(scheme)
+
+	addr1 := corev1.NodeAddress{
+		Type:    "InternalIP",
+		Address: "192.168.1.1",
+	}
+
+	addr2 := corev1.NodeAddress{
+		Type:    "InternalIP",
+		Address: "172.0.20.2",
+	}
+
+	testCases := []struct {
+		Machine               *machinev1.Machine
+		Addresses             []corev1.NodeAddress
+		ExpectedNodeAddresses []corev1.NodeAddress
+	}{
+		{
+			// Machine status updated
+			Machine: &machinev1.Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "machine1",
+					Namespace: "myns",
+				},
+				Status: machinev1.MachineStatus{
+					Addresses: []corev1.NodeAddress{},
+				},
+			},
+			Addresses:             []corev1.NodeAddress{addr1, addr2},
+			ExpectedNodeAddresses: []corev1.NodeAddress{addr1, addr2},
+		},
+		{
+			// Machine status unchanged
+			Machine: &machinev1.Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "machine1",
+					Namespace: "myns",
+				},
+				Status: machinev1.MachineStatus{
+					Addresses: []corev1.NodeAddress{addr1, addr2},
+				},
+			},
+			Addresses:             []corev1.NodeAddress{addr1, addr2},
+			ExpectedNodeAddresses: []corev1.NodeAddress{addr1, addr2},
+		},
+	}
+
+	for _, tc := range testCases {
+		c := fakeclient.NewFakeClientWithScheme(scheme)
+		if tc.Machine != nil {
+			c.Create(context.TODO(), tc.Machine)
+		}
+		actuator, err := NewActuator(ActuatorParams{
+			Client: c,
+		})
+		if err != nil {
+			t.Error(err)
+		}
+
+		err = actuator.applyMachineStatus(context.TODO(), tc.Machine, tc.Addresses)
+		if err != nil {
+			t.Errorf("unexpected error %v", err)
+		}
+
+		key := client.ObjectKey{
+			Name:      tc.Machine.Name,
+			Namespace: tc.Machine.Namespace,
+		}
+		machine := machinev1.Machine{}
+		c.Get(context.TODO(), key, &machine)
+
+		if tc.Machine.Status.Addresses != nil {
+			for i, address := range tc.ExpectedNodeAddresses {
+				if address != machine.Status.Addresses[i] {
+					t.Errorf("expected Address %v, found %v", address, machine.Status.Addresses[i])
+				}
+			}
+		}
+	}
+}
+
+func TestNodeAddresses(t *testing.T) {
+	scheme := runtime.NewScheme()
+	clusterapis.AddToScheme(scheme)
+
+	nic1 := bmh.NIC{
+		IP: "192.168.1.1",
+	}
+
+	nic2 := bmh.NIC{
+		IP: "172.0.20.2",
+	}
+
+	addr1 := corev1.NodeAddress{
+		Type:    "InternalIP",
+		Address: "192.168.1.1",
+	}
+
+	addr2 := corev1.NodeAddress{
+		Type:    "InternalIP",
+		Address: "172.0.20.2",
+	}
+
+	testCases := []struct {
+		Host                  *bmh.BareMetalHost
+		ExpectedNodeAddresses []corev1.NodeAddress
+	}{
+		{
+			// One NIC
+			Host: &bmh.BareMetalHost{
+				Status: bmh.BareMetalHostStatus{
+					HardwareDetails: &bmh.HardwareDetails{
+						NIC: []bmh.NIC{nic1},
+					},
+				},
+			},
+			ExpectedNodeAddresses: []corev1.NodeAddress{addr1},
+		},
+		{
+			// Two NICs
+			Host: &bmh.BareMetalHost{
+				Status: bmh.BareMetalHostStatus{
+					HardwareDetails: &bmh.HardwareDetails{
+						NIC: []bmh.NIC{nic1, nic2},
+					},
+				},
+			},
+			ExpectedNodeAddresses: []corev1.NodeAddress{addr1, addr2},
+		},
+		{
+			// no host at all, so this is a no-op
+			Host:                  nil,
+			ExpectedNodeAddresses: nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		c := fakeclient.NewFakeClientWithScheme(scheme)
+		if tc.Host != nil {
+			c.Create(context.TODO(), tc.Host)
+		}
+		actuator, err := NewActuator(ActuatorParams{
+			Client: c,
+		})
+		if err != nil {
+			t.Error(err)
+		}
+
+		nodeAddresses, err := actuator.nodeAddresses(tc.Host)
+		if err != nil {
+			t.Errorf("unexpected error %v", err)
+		}
+		expectedNodeAddresses := tc.ExpectedNodeAddresses
+
+		for i, address := range expectedNodeAddresses {
+			if address != nodeAddresses[i] {
+				t.Errorf("expected Address %v, found %v", address, nodeAddresses[i])
+			}
+		}
 	}
 }

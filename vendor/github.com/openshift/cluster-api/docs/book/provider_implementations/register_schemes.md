@@ -28,7 +28,6 @@ import (
         "fmt"
         "os"
 
-        "k8s.io/klog"
         "sigs.k8s.io/cluster-api-provider-solas/pkg/apis"
         "sigs.k8s.io/cluster-api-provider-solas/pkg/cloud/solas/actuators/cluster"
         "sigs.k8s.io/cluster-api-provider-solas/pkg/cloud/solas/actuators/machine"
@@ -44,8 +43,6 @@ import (
 )
 
 func main() {
-        klog.InitFlags(nil)
-
         cfg := config.GetConfigOrDie()
         if cfg == nil {
                 panic(fmt.Errorf("GetConfigOrDie didn't die"))
