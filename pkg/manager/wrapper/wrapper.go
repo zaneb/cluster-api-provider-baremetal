@@ -15,7 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/source"
-	admtypes "sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 )
 
 // New returns a new manager wrapper. It intercepts the controller when it gets
@@ -80,11 +80,6 @@ func (m *managerWrapper) GetScheme() *runtime.Scheme {
 	return m.manager.GetScheme()
 }
 
-// GetAdmissionDecoder returns the runtime.Decoder based on the scheme.
-func (m *managerWrapper) GetAdmissionDecoder() admtypes.Decoder {
-	return m.manager.GetAdmissionDecoder()
-}
-
 // GetClient returns a client configured with the Config
 func (m *managerWrapper) GetClient() client.Client {
 	return m.manager.GetClient()
@@ -100,12 +95,24 @@ func (m *managerWrapper) GetCache() cache.Cache {
 	return m.manager.GetCache()
 }
 
-// GetRecorder returns a new EventRecorder for the provided name
-func (m *managerWrapper) GetRecorder(name string) record.EventRecorder {
-	return m.manager.GetRecorder(name)
+// GetEventRecorderFor returns a new EventRecorder for the provided name
+func (m *managerWrapper) GetEventRecorderFor(name string) record.EventRecorder {
+	return m.manager.GetEventRecorderFor(name)
 }
 
 // GetRESTMapper returns a RESTMapper
 func (m *managerWrapper) GetRESTMapper() meta.RESTMapper {
 	return m.manager.GetRESTMapper()
+}
+
+// GetAPIReader returns a reader that will be configured to use the API server.
+// This should be used sparingly and only when the client does not fit your
+// use case.
+func (m *managerWrapper) GetAPIReader() client.Reader {
+	return m.manager.GetAPIReader()
+}
+
+// GetWebhookServer returns a webhook.Server
+func (m *managerWrapper) GetWebhookServer() *webhook.Server {
+	return m.manager.GetWebhookServer()
 }
