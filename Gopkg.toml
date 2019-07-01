@@ -23,6 +23,7 @@ required = [
 [[constraint]]
   name="github.com/metal3-io/baremetal-operator"
   branch="master"
+  source = "https://github.com/openshift/baremetal-operator.git"
 
 [[override]]
   name = "k8s.io/kube-aggregator"
