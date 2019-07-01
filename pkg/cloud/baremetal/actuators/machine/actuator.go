@@ -269,7 +269,7 @@ func (a *Actuator) chooseHost(ctx context.Context, machine *machinev1.Machine,
 		Namespace: machine.Namespace,
 	}
 
-	err := a.client.List(ctx, opts, &hosts)
+	err := a.client.List(ctx, &hosts, client.UseListOptions(opts))
 	if err != nil {
 		return nil, err
 	}
