@@ -25,6 +25,7 @@ import (
 	bmoapis "github.com/metal3-io/baremetal-operator/pkg/apis"
 	"github.com/metal3-io/cluster-api-provider-baremetal/pkg/apis"
 	"github.com/metal3-io/cluster-api-provider-baremetal/pkg/cloud/baremetal/actuators/machine"
+	"github.com/metal3-io/cluster-api-provider-baremetal/pkg/manager/wrapper"
 	clusterapis "github.com/openshift/cluster-api/pkg/apis"
 	capimachine "github.com/openshift/cluster-api/pkg/controller/machine"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -93,7 +94,8 @@ func main() {
 		panic(err)
 	}
 
-	capimachine.AddWithActuator(mgr, machineActuator)
+	// the manager wrapper will add an extra Watch to the controller
+	capimachine.AddWithActuator(wrapper.New(mgr), machineActuator)
 
 	if err := mgr.Start(signals.SetupSignalHandler()); err != nil {
 		entryLog.Error(err, "unable to run manager")
