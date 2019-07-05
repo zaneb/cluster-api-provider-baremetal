@@ -143,22 +143,24 @@ func (a *Actuator) Delete(ctx context.Context, cluster *machinev1.Cluster, machi
 	if err != nil {
 		return err
 	}
-	if host != nil && host.Spec.ConsumerRef != nil {
-		// don't remove the ConsumerRef if it references some other machine
-		if !consumerRefMatches(host.Spec.ConsumerRef, machine) {
-			log.Printf("host associated with %v, not machine %v.",
-				host.Spec.ConsumerRef.Name, machine.Name)
-			return nil
-		}
-		if host.Spec.Image != nil || host.Spec.Online || host.Spec.UserData != nil {
-			host.Spec.Image = nil
-			host.Spec.Online = false
-			host.Spec.UserData = nil
-			err = a.client.Update(ctx, host)
-			if err != nil && !errors.IsNotFound(err) {
-				return err
+	if host != nil {
+		if host.Spec.ConsumerRef != nil {
+			// don't remove the ConsumerRef if it references some other machine
+			if consumerRefMatches(host.Spec.ConsumerRef, machine) {
+				host.Spec.ConsumerRef = nil
+				host.Spec.Image = nil
+				host.Spec.Online = false
+				host.Spec.UserData = nil
+				err = a.client.Update(ctx, host)
+				if err != nil && !errors.IsNotFound(err) {
+					return err
+				}
+				return &clustererror.RequeueAfterError{}
+			} else {
+				log.Printf("host associated with %v, not machine %v.",
+					host.Spec.ConsumerRef.Name, machine.Name)
+				return nil
 			}
-			return &clustererror.RequeueAfterError{}
 		}
 		switch host.Status.Provisioning.State {
 		default:
@@ -166,11 +168,6 @@ func (a *Actuator) Delete(ctx context.Context, cluster *machinev1.Cluster, machi
 		case bmh.StateRegistrationError, bmh.StateRegistering,
 			bmh.StateMatchProfile, bmh.StateInspecting,
 			bmh.StateReady, bmh.StateValidationError:
-			host.Spec.ConsumerRef = nil
-			err = a.client.Update(ctx, host)
-			if err != nil && !errors.IsNotFound(err) {
-				return err
-			}
 		}
 	}
 	log.Printf("finished deleting machine %v.", machine.Name)

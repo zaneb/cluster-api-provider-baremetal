@@ -760,7 +760,7 @@ func TestDelete(t *testing.T) {
 		ExpectedResult      error
 	}{
 		{
-			CaseName: "deprovisioning required",
+			CaseName: "consumer ref should be removed",
 			Host: &bmh.BareMetalHost{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "myhost",
@@ -772,14 +772,6 @@ func TestDelete(t *testing.T) {
 						Namespace:  "myns",
 						Kind:       "Machine",
 						APIVersion: machinev1.SchemeGroupVersion.String(),
-					},
-					Image: &bmh.Image{
-						URL: "myimage",
-					},
-				},
-				Status: bmh.BareMetalHostStatus{
-					Provisioning: bmh.ProvisionStatus{
-						State: bmh.StateProvisioned,
 					},
 				},
 			},
@@ -795,94 +787,11 @@ func TestDelete(t *testing.T) {
 						HostAnnotation: "myns/myhost",
 					},
 				},
-			},
-			ExpectedConsumerRef: &corev1.ObjectReference{
-				Name:       "mymachine",
-				Namespace:  "myns",
-				Kind:       "Machine",
-				APIVersion: machinev1.SchemeGroupVersion.String(),
 			},
 			ExpectedResult: &clustererror.RequeueAfterError{},
 		},
 		{
-			CaseName: "deprovisioning in progress",
-			Host: &bmh.BareMetalHost{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "myhost",
-					Namespace: "myns",
-				},
-				Spec: bmh.BareMetalHostSpec{
-					ConsumerRef: &corev1.ObjectReference{
-						Name:       "mymachine",
-						Namespace:  "myns",
-						Kind:       "Machine",
-						APIVersion: machinev1.SchemeGroupVersion.String(),
-					},
-				},
-				Status: bmh.BareMetalHostStatus{
-					Provisioning: bmh.ProvisionStatus{
-						State: bmh.StateDeprovisioning,
-					},
-				},
-			},
-			Machine: machinev1.Machine{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       "Machine",
-					APIVersion: machinev1.SchemeGroupVersion.String(),
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "mymachine",
-					Namespace: "myns",
-					Annotations: map[string]string{
-						HostAnnotation: "myns/myhost",
-					},
-				},
-			},
-			ExpectedConsumerRef: &corev1.ObjectReference{
-				Name:       "mymachine",
-				Namespace:  "myns",
-				Kind:       "Machine",
-				APIVersion: machinev1.SchemeGroupVersion.String(),
-			},
-			ExpectedResult: &clustererror.RequeueAfterError{RequeueAfter: time.Second * 30},
-		},
-		{
-			CaseName: "machine ref should be removed",
-			Host: &bmh.BareMetalHost{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "myhost",
-					Namespace: "myns",
-				},
-				Spec: bmh.BareMetalHostSpec{
-					ConsumerRef: &corev1.ObjectReference{
-						Name:       "mymachine",
-						Namespace:  "myns",
-						Kind:       "Machine",
-						APIVersion: machinev1.SchemeGroupVersion.String(),
-					},
-				},
-				Status: bmh.BareMetalHostStatus{
-					Provisioning: bmh.ProvisionStatus{
-						State: bmh.StateReady,
-					},
-				},
-			},
-			Machine: machinev1.Machine{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       "Machine",
-					APIVersion: machinev1.SchemeGroupVersion.String(),
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "mymachine",
-					Namespace: "myns",
-					Annotations: map[string]string{
-						HostAnnotation: "myns/myhost",
-					},
-				},
-			},
-		},
-		{
-			CaseName: "machine ref does not match, so it should not be removed",
+			CaseName: "consumer ref does not match, so it should not be removed",
 			Host: &bmh.BareMetalHost{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "myhost",
@@ -894,14 +803,6 @@ func TestDelete(t *testing.T) {
 						Namespace:  "myns",
 						Kind:       "Machine",
 						APIVersion: machinev1.SchemeGroupVersion.String(),
-					},
-					Image: &bmh.Image{
-						URL: "someoneelsesimage",
-					},
-				},
-				Status: bmh.BareMetalHostStatus{
-					Provisioning: bmh.ProvisionStatus{
-						State: bmh.StateProvisioned,
 					},
 				},
 			},
@@ -926,7 +827,7 @@ func TestDelete(t *testing.T) {
 			},
 		},
 		{
-			CaseName: "no machine ref, so this is a no-op",
+			CaseName: "no consumer ref, so wait for deprovisioning",
 			Host: &bmh.BareMetalHost{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "myhost",
@@ -946,6 +847,7 @@ func TestDelete(t *testing.T) {
 					},
 				},
 			},
+			ExpectedResult: &clustererror.RequeueAfterError{RequeueAfter: time.Second * 30},
 		},
 		{
 			CaseName: "no host at all, so this is a no-op",
