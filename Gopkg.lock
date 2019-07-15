@@ -301,7 +301,7 @@
 
 [[projects]]
   branch = "openshift-4.2-cluster-api-0.1.0"
-  digest = "1:5baa824ab22c547cdf9bad8594c6cc7af21c63193e2bfaf6e22a34b8ea4ef4e4"
+  digest = "1:54dfec845e2fb5631fa1fc556a677a473a7efe663df4a4808621dca5e0358b23"
   name = "github.com/openshift/cluster-api"
   packages = [
     "pkg/apis",
@@ -314,7 +314,7 @@
     "pkg/util",
   ]
   pruneopts = "T"
-  revision = "046d74a3bd9143fb650cb894ece0f088a3b26de3"
+  revision = "72ebbaa0456c052d886259dc26420644178a0c5f"
 
 [[projects]]
   branch = "master"
@@ -923,7 +923,6 @@
     "pkg/recorder",
     "pkg/runtime/inject",
     "pkg/runtime/log",
-    "pkg/runtime/scheme",
     "pkg/runtime/signals",
     "pkg/scheme",
     "pkg/source",
@@ -1010,6 +1009,7 @@
     "k8s.io/code-generator/cmd/client-gen",
     "k8s.io/code-generator/cmd/deepcopy-gen",
     "k8s.io/klog",
+    "sigs.k8s.io/controller-runtime/pkg/cache",
     "sigs.k8s.io/controller-runtime/pkg/client",
     "sigs.k8s.io/controller-runtime/pkg/client/config",
     "sigs.k8s.io/controller-runtime/pkg/client/fake",
@@ -1019,10 +1019,10 @@
     "sigs.k8s.io/controller-runtime/pkg/manager",
     "sigs.k8s.io/controller-runtime/pkg/reconcile",
     "sigs.k8s.io/controller-runtime/pkg/runtime/log",
-    "sigs.k8s.io/controller-runtime/pkg/runtime/scheme",
     "sigs.k8s.io/controller-runtime/pkg/runtime/signals",
+    "sigs.k8s.io/controller-runtime/pkg/scheme",
     "sigs.k8s.io/controller-runtime/pkg/source",
-    "sigs.k8s.io/controller-runtime/pkg/webhook/admission/types",
+    "sigs.k8s.io/controller-runtime/pkg/webhook",
     "sigs.k8s.io/controller-tools/cmd/controller-gen",
     "sigs.k8s.io/testing_frameworks/integration",
     "sigs.k8s.io/yaml",
