@@ -31,7 +31,6 @@ func printVersion() {
 
 func main() {
 	devLogging := flag.Bool("dev", false, "enable dev logging")
-	metricsAddr := flag.String("metrics-addr", "127.0.0.1:8085", "The address the metric endpoint binds to.")
 	flag.Parse()
 
 	// The logger instantiated here can be changed to any logger
@@ -62,13 +61,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	opts := manager.Options{
-		Namespace:          namespace,
-		MetricsBindAddress: *metricsAddr,
-	}
-
 	// Create a new Cmd to provide shared dependencies and start components
-	mgr, err := manager.New(cfg, opts)
+	mgr, err := manager.New(cfg, manager.Options{Namespace: namespace})
 	if err != nil {
 		log.Error(err, "")
 		os.Exit(1)
