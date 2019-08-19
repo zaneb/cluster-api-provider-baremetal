@@ -33,8 +33,8 @@ machine-api.
 *externallyProvisioned* -- A boolean indicating whether something else
 is managing the image running on the host. When set, if no image is
 provided, the host's power status and hardware inventory will be
-monitored. If the *image* contains image parameters, this field is
-ignored.
+monitored. If this flag is set, no provisioning or deprovisioning
+operations are performed for the host.
 
 *image.url* -- The URL of an image to deploy to the host.
 
@@ -123,7 +123,18 @@ the host.
 *hardwareProfile* -- The name of the hardware profile that matches the
 hardware discovered on the host. Details about the hardware are saved
 to the *hardware* section of the status. If the hardware does not
-match a known profile, the value "unknown" is used.
+match a known profile, the value "unknown" is used.  In practice, so far
+this affects which device the deployed OS image is written to.  The
+following `hardwareProfile` settings and the corresponding root device
+are listed here, and are definitely subject to change.  (Note that the
+default is `unknown`.)
+
+| **hardwareProfile** | **Root Device** |
+|---------------------|-----------------|
+| `unknown`           | /dev/sda        |
+|  `libvirt`          |  /dev/vda       |
+| `dell`              | HCTL: 0:0:0:0   |
+| `dell-raid`         | HCTL: 0:2:0:0   |
 
 *poweredOn* -- Boolean indicating whether the host is powered on. See
 *online*.
