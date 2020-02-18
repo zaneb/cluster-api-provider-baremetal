@@ -1,6 +1,7 @@
 package bmc
 
 import (
+	"net/url"
 	"strings"
 )
 
@@ -10,20 +11,22 @@ func init() {
 	registerFactory("idrac+https", newIDRACAccessDetails)
 }
 
-func newIDRACAccessDetails(bmcType, portNum, hostname, path string) (AccessDetails, error) {
+func newIDRACAccessDetails(parsedURL *url.URL, disableCertificateVerification bool) (AccessDetails, error) {
 	return &iDracAccessDetails{
-		bmcType:  bmcType,
-		portNum:  portNum,
-		hostname: hostname,
-		path:     path,
+		bmcType:                        parsedURL.Scheme,
+		portNum:                        parsedURL.Port(),
+		hostname:                       parsedURL.Hostname(),
+		path:                           parsedURL.Path,
+		disableCertificateVerification: disableCertificateVerification,
 	}, nil
 }
 
 type iDracAccessDetails struct {
-	bmcType  string
-	portNum  string
-	hostname string
-	path     string
+	bmcType                        string
+	portNum                        string
+	hostname                       string
+	path                           string
+	disableCertificateVerification bool
 }
 
 func (a *iDracAccessDetails) Type() string {
@@ -40,6 +43,10 @@ func (a *iDracAccessDetails) Driver() string {
 	return "idrac"
 }
 
+func (a *iDracAccessDetails) DisableCertificateVerification() bool {
+	return a.disableCertificateVerification
+}
+
 // DriverInfo returns a data structure to pass as the DriverInfo
 // parameter when creating a node in Ironic. The structure is
 // pre-populated with the access information, and the caller is
@@ -50,6 +57,9 @@ func (a *iDracAccessDetails) DriverInfo(bmcCreds Credentials) map[string]interfa
 		"drac_username": bmcCreds.Username,
 		"drac_password": bmcCreds.Password,
 		"drac_address":  a.hostname,
+	}
+	if a.disableCertificateVerification {
+		result["drac_verify_ca"] = false
 	}
 
 	schemes := strings.Split(a.bmcType, "+")
@@ -68,4 +78,20 @@ func (a *iDracAccessDetails) DriverInfo(bmcCreds Credentials) map[string]interfa
 
 func (a *iDracAccessDetails) BootInterface() string {
 	return "ipxe"
+}
+
+func (a *iDracAccessDetails) ManagementInterface() string {
+	return ""
+}
+
+func (a *iDracAccessDetails) PowerInterface() string {
+	return ""
+}
+
+func (a *iDracAccessDetails) RAIDInterface() string {
+	return ""
+}
+
+func (a *iDracAccessDetails) VendorInterface() string {
+	return ""
 }

@@ -283,14 +283,14 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:3d549d4bbecddf6fac2daad99bfcc4ce2ff0d68e71aa3df114b2a7a84fdda343"
+  digest = "1:f8ee68a2bc230e1daa5232215163f82513e5620dd5dc63512c41dcadcefcc4b7"
   name = "github.com/metal3-io/baremetal-operator"
   packages = [
     "pkg/apis",
     "pkg/apis/metal3/v1alpha1",
   ]
   pruneopts = "T"
-  revision = "7869f83d0e93fdb9c589eaf66b7d459d67b39f83"
+  revision = "71b826cc0f0a0686efc4fe84e2eab7e36aab27f7"
   source = "https://github.com/openshift/baremetal-operator.git"
 
 [[projects]]

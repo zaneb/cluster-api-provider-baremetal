@@ -11,7 +11,7 @@ your development fork.
 2. Set up your account on [quay.io](https://quay.io).
 3. Link your repository from step 1 to quay.io by following the
    instructions to "Create New Repository" from
-   https://quay.io/repository/
+   <https://quay.io/repository/>
 
    1. Enter the quay.io repository name. It is good practice to use
       the same name as the github repo.
@@ -66,8 +66,8 @@ your development fork.
       the service account, role, and mapping.
    2. Apply the new deployment:
 
-       oc apply -f deploy/dev-operator.yaml
+       kubectl apply -f deploy/dev-operator.yaml
 
-To monitor the operator, use `oc get pods` to find the pod name for
+To monitor the operator, use `kubectl get pods` to find the pod name for
 the deployment (it will start with `baremetal-operator`) and then use
-`oc log -f $podname` to see the console log output.
+`kubectl log -f $podname` to see the console log output.
