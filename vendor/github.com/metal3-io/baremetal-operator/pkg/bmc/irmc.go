@@ -1,21 +1,27 @@
 package bmc
 
+import (
+	"net/url"
+)
+
 func init() {
 	registerFactory("irmc", newIRMCAccessDetails)
 }
 
-func newIRMCAccessDetails(bmcType, portNum, hostname, path string) (AccessDetails, error) {
+func newIRMCAccessDetails(parsedURL *url.URL, disableCertificateVerification bool) (AccessDetails, error) {
 	return &iRMCAccessDetails{
-		bmcType:  bmcType,
-		portNum:  portNum,
-		hostname: hostname,
+		bmcType:                        parsedURL.Scheme,
+		portNum:                        parsedURL.Port(),
+		hostname:                       parsedURL.Hostname(),
+		disableCertificateVerification: disableCertificateVerification,
 	}, nil
 }
 
 type iRMCAccessDetails struct {
-	bmcType  string
-	portNum  string
-	hostname string
+	bmcType                        string
+	portNum                        string
+	hostname                       string
+	disableCertificateVerification bool
 }
 
 func (a *iRMCAccessDetails) Type() string {
@@ -32,6 +38,10 @@ func (a *iRMCAccessDetails) Driver() string {
 	return "irmc"
 }
 
+func (a *iRMCAccessDetails) DisableCertificateVerification() bool {
+	return a.disableCertificateVerification
+}
+
 // DriverInfo returns a data structure to pass as the DriverInfo
 // parameter when creating a node in Ironic. The structure is
 // pre-populated with the access information, and the caller is
@@ -44,6 +54,10 @@ func (a *iRMCAccessDetails) DriverInfo(bmcCreds Credentials) map[string]interfac
 		"irmc_address":  a.hostname,
 	}
 
+	if a.disableCertificateVerification {
+		result["irmc_verify_ca"] = false
+	}
+
 	if a.portNum != "" {
 		result["irmc_port"] = a.portNum
 	}
@@ -53,4 +67,20 @@ func (a *iRMCAccessDetails) DriverInfo(bmcCreds Credentials) map[string]interfac
 
 func (a *iRMCAccessDetails) BootInterface() string {
 	return "pxe"
+}
+
+func (a *iRMCAccessDetails) ManagementInterface() string {
+	return ""
+}
+
+func (a *iRMCAccessDetails) PowerInterface() string {
+	return ""
+}
+
+func (a *iRMCAccessDetails) RAIDInterface() string {
+	return "irmc"
+}
+
+func (a *iRMCAccessDetails) VendorInterface() string {
+	return ""
 }

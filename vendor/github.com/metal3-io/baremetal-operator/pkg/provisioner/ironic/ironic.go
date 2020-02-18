@@ -2,9 +2,6 @@ package ironic
 
 import (
 	"fmt"
-	"io/ioutil"
-	"net/http"
-	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -16,8 +13,6 @@ import (
 	"github.com/gophercloud/gophercloud/openstack/baremetal/v1/ports"
 	noauthintrospection "github.com/gophercloud/gophercloud/openstack/baremetalintrospection/noauth"
 	"github.com/gophercloud/gophercloud/openstack/baremetalintrospection/v1/introspection"
-
-	nodeutils "github.com/gophercloud/utils/openstack/baremetal/v1/nodes"
 
 	"github.com/pkg/errors"
 
@@ -113,7 +108,7 @@ func newProvisioner(host *metal3v1alpha1.BareMetalHost, bmcCreds bmc.Credentials
 	if err != nil {
 		return nil, err
 	}
-	bmcAccess, err := bmc.NewAccessDetails(host.Spec.BMC.Address)
+	bmcAccess, err := bmc.NewAccessDetails(host.Spec.BMC.Address, host.Spec.BMC.DisableCertificateVerification)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse BMC address information")
 	}
@@ -126,7 +121,7 @@ func newProvisioner(host *metal3v1alpha1.BareMetalHost, bmcCreds bmc.Credentials
 	}
 	// Ensure we have a microversion high enough to get the features
 	// we need.
-	client.Microversion = "1.50"
+	client.Microversion = "1.56"
 	p := &ironicProvisioner{
 		host:      host,
 		status:    &(host.Status.Provisioning),
@@ -242,10 +237,15 @@ func (p *ironicProvisioner) ValidateManagementAccess(credentialsChanged bool) (r
 		ironicNode, err = nodes.Create(
 			p.client,
 			nodes.CreateOpts{
-				Driver:        p.bmcAccess.Driver(),
-				BootInterface: p.bmcAccess.BootInterface(),
-				Name:          p.host.Name,
-				DriverInfo:    driverInfo,
+				Driver:              p.bmcAccess.Driver(),
+				BootInterface:       p.bmcAccess.BootInterface(),
+				Name:                p.host.Name,
+				DriverInfo:          driverInfo,
+				InspectInterface:    "inspector",
+				ManagementInterface: p.bmcAccess.ManagementInterface(),
+				PowerInterface:      p.bmcAccess.PowerInterface(),
+				RAIDInterface:       p.bmcAccess.RAIDInterface(),
+				VendorInterface:     p.bmcAccess.VendorInterface(),
 			}).Extract()
 		// FIXME(dhellmann): Handle 409 and 503? errors here.
 		if err != nil {
@@ -278,12 +278,7 @@ func (p *ironicProvisioner) ValidateManagementAccess(credentialsChanged bool) (r
 		}
 
 		if p.host.Spec.Image != nil && p.host.Spec.Image.URL != "" {
-			// FIXME(dhellmann): The Stein version of Ironic supports passing
-			// a URL. When we upgrade, we can stop doing this work ourself.
-			checksum, err := p.getImageChecksum()
-			if err != nil {
-				return result, errors.Wrap(err, "failed to retrieve image checksum")
-			}
+			checksum := p.host.Spec.Image.Checksum
 
 			p.log.Info("setting instance info",
 				"image_source", p.host.Spec.Image.URL,
@@ -301,13 +296,10 @@ func (p *ironicProvisioner) ValidateManagementAccess(credentialsChanged bool) (r
 					Path:  "/instance_info/image_checksum",
 					Value: checksum,
 				},
-				// NOTE(dhellmann): We must fill in *some* value so that
-				// Ironic will monitor the host. We don't have a nova
-				// instance at all, so just give the node it's UUID again.
 				nodes.UpdateOperation{
 					Op:    nodes.ReplaceOp,
 					Path:  "/instance_uuid",
-					Value: p.host.Status.Provisioning.ID,
+					Value: string(p.host.ObjectMeta.UID),
 				},
 			}
 			_, err = nodes.Update(p.client, ironicNode.UUID, updates).Extract()
@@ -316,6 +308,7 @@ func (p *ironicProvisioner) ValidateManagementAccess(credentialsChanged bool) (r
 			case gophercloud.ErrDefault409:
 				p.log.Info("could not update host settings in ironic, busy")
 				result.Dirty = true
+				result.RequeueAfter = provisionRequeueDelay
 				return result, nil
 			default:
 				return result, errors.Wrap(err, "failed to update host settings in ironic")
@@ -349,6 +342,7 @@ func (p *ironicProvisioner) ValidateManagementAccess(credentialsChanged bool) (r
 			case nil:
 			case gophercloud.ErrDefault409:
 				p.log.Info("could not update host driver settings, busy")
+				result.Dirty = true
 				result.RequeueAfter = provisionRequeueDelay
 				return result, nil
 			default:
@@ -668,42 +662,6 @@ func (p *ironicProvisioner) UpdateHardwareState() (result provisioner.Result, er
 	return result, nil
 }
 
-func checksumIsURL(checksumURL string) (bool, error) {
-	parsedChecksumURL, err := url.Parse(checksumURL)
-	if err != nil {
-		return false, errors.Wrap(err, "Could not parse image checksum")
-	}
-	return parsedChecksumURL.Scheme != "", nil
-}
-
-func (p *ironicProvisioner) getImageChecksum() (string, error) {
-	checksum := p.host.Spec.Image.Checksum
-	isURL, err := checksumIsURL(checksum)
-	if err != nil {
-		return "", errors.Wrap(err, "Could not understand image checksum")
-	}
-	if isURL {
-		p.log.Info("looking for checksum for image", "URL", checksum)
-		// #nosec
-		// TODO: Are there more ways to constraint the URL that's given here?
-		resp, err := http.Get(checksum)
-		if err != nil {
-			return "", errors.Wrap(err, "Could not fetch image checksum")
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != 200 {
-			return "", fmt.Errorf("Failed to fetch image checksum from %s: [%d] %s",
-				checksum, resp.StatusCode, resp.Status)
-		}
-		checksumBody, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return "", errors.Wrap(err, "Could not read image checksum")
-		}
-		checksum = strings.TrimSpace(string(checksumBody))
-	}
-	return checksum, nil
-}
-
 func (p *ironicProvisioner) getUpdateOptsForNode(ironicNode *nodes.Node, checksum string) (updates nodes.UpdateOpts, err error) {
 
 	hwProf, err := hardware.GetProfile(p.host.HardwareProfile())
@@ -749,17 +707,13 @@ func (p *ironicProvisioner) getUpdateOptsForNode(ironicNode *nodes.Node, checksu
 	)
 
 	// instance_uuid
-	//
-	// NOTE(dhellmann): We must fill in *some* value so that Ironic
-	// will monitor the host. We don't have a nova instance at all, so
-	// just give the node it's UUID again.
 	p.log.Info("setting instance_uuid")
 	updates = append(
 		updates,
 		nodes.UpdateOperation{
 			Op:    nodes.ReplaceOp,
 			Path:  "/instance_uuid",
-			Value: p.host.Status.Provisioning.ID,
+			Value: string(p.host.ObjectMeta.UID),
 		},
 	)
 
@@ -927,11 +881,6 @@ func (p *ironicProvisioner) Adopt() (result provisioner.Result, err error) {
 		return p.ValidateManagementAccess(true)
 	}
 
-	p.log.Info("waiting for adoption to complete",
-		"current", ironicNode.ProvisionState,
-		"target", ironicNode.TargetProvisionState,
-	)
-
 	switch nodes.ProvisionState(ironicNode.ProvisionState) {
 	case nodes.Enroll:
 		err = fmt.Errorf("Invalid state for adopt: %s",
@@ -970,12 +919,7 @@ func (p *ironicProvisioner) Provision(getUserData provisioner.UserDataSource) (r
 
 	p.log.Info("provisioning image to host", "state", ironicNode.ProvisionState)
 
-	// FIXME(dhellmann): The Stein version of Ironic supports passing
-	// a URL. When we upgrade, we can stop doing this work ourself.
-	checksum, err := p.getImageChecksum()
-	if err != nil {
-		return result, errors.Wrap(err, "failed to retrieve image checksum")
-	}
+	checksum := p.host.Spec.Image.Checksum
 
 	// Local variable to make it easier to test if ironic is
 	// configured with the same image we are trying to provision to
@@ -1023,26 +967,24 @@ func (p *ironicProvisioner) Provision(getUserData provisioner.UserDataSource) (r
 		// setting the state to "active".
 		p.log.Info("making host active")
 
-		// Build the config drive image using the userData we've been
-		// given so we can pass it to Ironic.
-		//
-		// FIXME(dhellmann): The Stein version of Ironic should be
-		// able to accept the user data string directly, without
-		// building the ISO image first.
-		var configDriveData string
 		userData, err := getUserData()
 		if err != nil {
 			return result, errors.Wrap(err, "could not retrieve user data")
 		}
+
+		var configDrive nodes.ConfigDrive
 		if userData != "" {
-			configDrive := nodeutils.ConfigDrive{
-				UserData: nodeutils.UserDataString(userData),
+			configDrive = nodes.ConfigDrive{
+				UserData: userData,
 				// cloud-init requires that meta_data.json exists and
 				// that the "uuid" field is present to process
 				// any of the config drive contents.
-				MetaData: map[string]interface{}{"uuid": p.host.Status.Provisioning.ID},
+				MetaData: map[string]interface{}{
+					"uuid":             string(p.host.ObjectMeta.UID),
+					"metal3-namespace": p.host.ObjectMeta.Namespace,
+					"metal3-name":      p.host.ObjectMeta.Name,
+				},
 			}
-			configDriveData, err = configDrive.ToConfigDrive()
 			if err != nil {
 				return result, errors.Wrap(err, "failed to build config drive")
 			}
@@ -1055,7 +997,7 @@ func (p *ironicProvisioner) Provision(getUserData provisioner.UserDataSource) (r
 			ironicNode,
 			nodes.ProvisionStateOpts{
 				Target:      nodes.TargetActive,
-				ConfigDrive: configDriveData,
+				ConfigDrive: configDrive,
 			},
 		)
 
@@ -1312,6 +1254,7 @@ func (p *ironicProvisioner) PowerOn() (result provisioner.Result, err error) {
 		if ironicNode.TargetPowerState == powerOn {
 			p.log.Info("waiting for power status to change")
 			result.RequeueAfter = powerRequeueDelay
+			result.Dirty = true
 			return result, nil
 		}
 		result, err = p.changePower(ironicNode, nodes.PowerOn)
@@ -1339,6 +1282,7 @@ func (p *ironicProvisioner) PowerOff() (result provisioner.Result, err error) {
 		if ironicNode.TargetPowerState == powerOff {
 			p.log.Info("waiting for power status to change")
 			result.RequeueAfter = powerRequeueDelay
+			result.Dirty = true
 			return result, nil
 		}
 		result, err = p.changePower(ironicNode, nodes.PowerOff)
