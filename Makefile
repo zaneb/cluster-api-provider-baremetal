@@ -37,7 +37,7 @@ manifests:
 	go run vendor/sigs.k8s.io/controller-tools/cmd/controller-gen/main.go all
 	kustomize build config/ > provider-components.yaml
 	echo "---" >> provider-components.yaml
-	cd vendor && kustomize build github.com/openshift/cluster-api/config >> ../provider-components.yaml
+	kustomize build vendor/github.com/openshift/cluster-api/config >> provider-components.yaml
 
 # Run go fmt against code
 fmt:
