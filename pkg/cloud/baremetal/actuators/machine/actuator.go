@@ -215,7 +215,7 @@ func (a *Actuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machi
 	// Delete Machine when BareMetalHost is deleted.
 	// This is to ensure the MachineSet creates a new Machine
 	// containing the latest ProviderSpec.
-	if host.Status.Provisioning.State == "deleting" {
+	if host.Status.Provisioning.State == bmh.StateDeleting {
 		log.Print("Removing consumerRef for host: ", host.Name)
 		host.Spec.ConsumerRef = nil
 		err = a.client.Update(ctx, host)
