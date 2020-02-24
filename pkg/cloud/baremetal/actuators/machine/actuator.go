@@ -122,7 +122,9 @@ func (a *Actuator) Create(ctx context.Context, cluster *clusterv1.Cluster, machi
 
 	// Add a finalizer for the BMH. This will allow us to delete
 	// the Machine when the BMH is deleted.
-	host.Finalizers = append(host.Finalizers, machinev1.MachineFinalizer)
+	if !utils.StringInList(host.Finalizers, machinev1.MachineFinalizer) {
+		host.Finalizers = append(host.Finalizers, machinev1.MachineFinalizer)
+	}
 
 	err = a.setHostSpec(ctx, host, machine, config)
 	if err != nil {
@@ -216,11 +218,15 @@ func (a *Actuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machi
 	// This is to ensure the MachineSet creates a new Machine
 	// containing the latest ProviderSpec.
 	if host.Status.Provisioning.State == bmh.StateDeleting {
-		log.Print("Removing consumerRef for host: ", host.Name)
-		host.Spec.ConsumerRef = nil
-		err = a.client.Update(ctx, host)
-		if err != nil && !errors.IsNotFound(err) {
-			return err
+		if utils.StringInList(host.Finalizers, machinev1.MachineFinalizer) {
+			log.Print("Removing finalizer for host: ", host.Name)
+			host.Finalizers = utils.FilterStringFromList(
+				host.Finalizers, machinev1.MachineFinalizer)
+			err = a.client.Update(ctx, host)
+			if err != nil && !errors.IsNotFound(err) {
+				return err
+			}
+			log.Print("Removed finalizer for host ", host.Name)
 		}
 
 		log.Print("Deleting machine associated with host: ", host.Name)
@@ -230,14 +236,16 @@ func (a *Actuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machi
 		}
 		log.Print("Deleted machine associated with host: ", host.Name)
 
-		log.Print("Removing finalizer for host: ", host.Name)
-		host.Finalizers = utils.FilterStringFromList(
-			host.Finalizers, machinev1.MachineFinalizer)
-		err = a.client.Update(ctx, host)
-		if err != nil && !errors.IsNotFound(err) {
-			return err
+		if host.Spec.ConsumerRef != nil {
+			log.Print("Removing consumerRef for host: ", host.Name)
+			host.Spec.ConsumerRef = nil
+			err = a.client.Update(ctx, host)
+			if err != nil && !errors.IsNotFound(err) {
+				return err
+			}
+			log.Print("Removed consumerRef for host: ", host.Name)
 		}
-		log.Print("Removed finalizer for host ", host.Name)
+
 		return nil
 	}
 
