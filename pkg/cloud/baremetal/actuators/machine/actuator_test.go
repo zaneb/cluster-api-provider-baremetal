@@ -2,7 +2,6 @@ package machine
 
 import (
 	"context"
-	"reflect"
 	"testing"
 	"time"
 
@@ -1509,7 +1508,6 @@ func TestDeleteOfBareMetalHostDeletesMachine(t *testing.T) {
 		Host                  *bmh.BareMetalHost
 		Machine               *machinev1.Machine
 		ExpectedMachineExists bool
-		ExpectedConsumerRef   *corev1.ObjectReference
 	}{
 		{
 			CaseName: "machine should not be deleted",
@@ -1544,12 +1542,6 @@ func TestDeleteOfBareMetalHostDeletesMachine(t *testing.T) {
 				Status: machinev1.MachineStatus{},
 			},
 			ExpectedMachineExists: true,
-			ExpectedConsumerRef: &corev1.ObjectReference{
-				Name:       "mymachine1",
-				Namespace:  "myns",
-				Kind:       "Machine",
-				APIVersion: machinev1.SchemeGroupVersion.String(),
-			},
 		},
 		{
 			CaseName: "machine should be deleted",
@@ -1584,7 +1576,6 @@ func TestDeleteOfBareMetalHostDeletesMachine(t *testing.T) {
 				Status: machinev1.MachineStatus{},
 			},
 			ExpectedMachineExists: false,
-			ExpectedConsumerRef:   nil,
 		},
 	}
 
@@ -1628,17 +1619,6 @@ func TestDeleteOfBareMetalHostDeletesMachine(t *testing.T) {
 				if tc.ExpectedMachineExists != result {
 					t.Errorf("ExpectedMachineExists: %v, found %v", tc.ExpectedMachineExists, result)
 				}
-			}
-
-			hostKey := client.ObjectKey{
-				Name:      tc.Host.Name,
-				Namespace: tc.Host.Namespace,
-			}
-			host := bmh.BareMetalHost{}
-			c.Get(context.TODO(), hostKey, &host)
-
-			if reflect.DeepEqual(tc.ExpectedConsumerRef, host.Spec.ConsumerRef) == false {
-				t.Errorf("expected Host consumerRef: %v, found %v", tc.ExpectedConsumerRef, host.Spec.ConsumerRef)
 			}
 		}
 	}
