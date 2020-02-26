@@ -235,17 +235,6 @@ func (a *Actuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machi
 			return err
 		}
 		log.Print("Deleted machine associated with host: ", host.Name)
-
-		if host.Spec.ConsumerRef != nil {
-			log.Print("Removing consumerRef for host: ", host.Name)
-			host.Spec.ConsumerRef = nil
-			err = a.client.Update(ctx, host)
-			if err != nil && !errors.IsNotFound(err) {
-				return err
-			}
-			log.Print("Removed consumerRef for host: ", host.Name)
-		}
-
 		return nil
 	}
 
