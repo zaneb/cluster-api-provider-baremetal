@@ -25,6 +25,7 @@ import (
 	"time"
 
 	bmh "github.com/metal3-io/baremetal-operator/pkg/apis/metal3/v1alpha1"
+	"github.com/metal3-io/baremetal-operator/pkg/utils"
 	bmv1alpha1 "github.com/metal3-io/cluster-api-provider-baremetal/pkg/apis/baremetal/v1alpha1"
 	clusterv1 "github.com/openshift/cluster-api/pkg/apis/cluster/v1alpha1"
 	"github.com/openshift/cluster-api/pkg/apis/machine/common"
@@ -119,6 +120,12 @@ func (a *Actuator) Create(ctx context.Context, cluster *clusterv1.Cluster, machi
 		log.Printf("Machine %s already associated with host %s", machine.Name, host.Name)
 	}
 
+	// Add a finalizer for the BMH. This will allow us to delete
+	// the Machine when the BMH is deleted.
+	if !utils.StringInList(host.Finalizers, machinev1.MachineFinalizer) {
+		host.Finalizers = append(host.Finalizers, machinev1.MachineFinalizer)
+	}
+
 	err = a.setHostSpec(ctx, host, machine, config)
 	if err != nil {
 		return err
@@ -204,7 +211,40 @@ func (a *Actuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machi
 		return err
 	}
 	if host == nil {
+		// When finalizer for BHM is removed but an error occur before
+		// the Machine is deleted below in the StateDeleting block, the
+		// Machine should be deleted when no host is found.
+		log.Print("Deleting machine whose associated host is gone: ", machine.Name)
+		a.client.Delete(ctx, machine)
+		if err != nil && !errors.IsNotFound(err) {
+			return err
+		}
+		log.Print("Deleted machine whose associated host is gone: ", machine.Name)
 		return fmt.Errorf("host not found for machine %s", machine.Name)
+	}
+
+	// Delete Machine when BareMetalHost is deleted.
+	// This is to ensure the MachineSet creates a new Machine
+	// containing the latest ProviderSpec.
+	if host.Status.Provisioning.State == bmh.StateDeleting {
+		if utils.StringInList(host.Finalizers, machinev1.MachineFinalizer) {
+			log.Print("Removing finalizer for host: ", host.Name)
+			host.Finalizers = utils.FilterStringFromList(
+				host.Finalizers, machinev1.MachineFinalizer)
+			err = a.client.Update(ctx, host)
+			if err != nil && !errors.IsNotFound(err) {
+				return err
+			}
+			log.Print("Removed finalizer for host: ", host.Name)
+		}
+
+		log.Print("Deleting machine whose associated host is gone: ", machine.Name)
+		a.client.Delete(ctx, machine)
+		if err != nil && !errors.IsNotFound(err) {
+			return err
+		}
+		log.Print("Deleted machine whose associated host is gone: ", machine.Name)
+		return nil
 	}
 
 	err = a.ensureAnnotation(ctx, machine, host)
