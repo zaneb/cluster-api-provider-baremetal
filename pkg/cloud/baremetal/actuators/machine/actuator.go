@@ -214,12 +214,12 @@ func (a *Actuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machi
 		// When finalizer for BHM is removed but an error occur before
 		// the Machine is deleted below in the StateDeleting block, the
 		// Machine should be deleted when no host is found.
-		log.Print("Deleting machine associated with no host: ", machine.Name)
+		log.Print("Deleting machine whose associated host is gone: ", machine.Name)
 		a.client.Delete(ctx, machine)
 		if err != nil && !errors.IsNotFound(err) {
 			return err
 		}
-		log.Print("Deleted machine associated with no host: ", machine.Name)
+		log.Print("Deleted machine whose associated host is gone: ", machine.Name)
 		return fmt.Errorf("host not found for machine %s", machine.Name)
 	}
 
@@ -235,15 +235,15 @@ func (a *Actuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machi
 			if err != nil && !errors.IsNotFound(err) {
 				return err
 			}
-			log.Print("Removed finalizer for host ", host.Name)
+			log.Print("Removed finalizer for host: ", host.Name)
 		}
 
-		log.Print("Deleting machine associated with host: ", host.Name)
+		log.Print("Deleting machine whose associated host is gone: ", machine.Name)
 		a.client.Delete(ctx, machine)
 		if err != nil && !errors.IsNotFound(err) {
 			return err
 		}
-		log.Print("Deleted machine associated with host: ", host.Name)
+		log.Print("Deleted machine whose associated host is gone: ", machine.Name)
 		return nil
 	}
 
