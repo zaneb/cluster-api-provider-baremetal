@@ -226,7 +226,9 @@ func (a *Actuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machi
 	// Delete Machine when BareMetalHost is deleted.
 	// This is to ensure the MachineSet creates a new Machine
 	// containing the latest ProviderSpec.
-	if host.Status.Provisioning.State == bmh.StateDeleting {
+	if !host.DeletionTimestamp.IsZero() &&
+		host.Status.Provisioning.State != bmh.StateProvisioned &&
+		host.Status.Provisioning.State != bmh.StateProvisioning {
 		if utils.StringInList(host.Finalizers, machinev1.MachineFinalizer) {
 			log.Print("Removing finalizer for host: ", host.Name)
 			host.Finalizers = utils.FilterStringFromList(

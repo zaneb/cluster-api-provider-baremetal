@@ -1503,6 +1503,8 @@ func TestDeleteOfBareMetalHostDeletesMachine(t *testing.T) {
 	clusterapis.AddToScheme(scheme)
 	bmoapis.AddToScheme(scheme)
 
+	now := metav1.Now()
+
 	testCases := []struct {
 		CaseName              string
 		Host                  *bmh.BareMetalHost
@@ -1510,7 +1512,7 @@ func TestDeleteOfBareMetalHostDeletesMachine(t *testing.T) {
 		ExpectedMachineExists bool
 	}{
 		{
-			CaseName: "machine should not be deleted",
+			CaseName: "ready machine should not be deleted",
 			Host: &bmh.BareMetalHost{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "myhost1",
@@ -1544,11 +1546,81 @@ func TestDeleteOfBareMetalHostDeletesMachine(t *testing.T) {
 			ExpectedMachineExists: true,
 		},
 		{
-			CaseName: "machine should be deleted",
+			CaseName: "machine should not be deleted when host deprovisioning but not deleting",
 			Host: &bmh.BareMetalHost{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "myhost2",
+					Name:      "myhost1",
 					Namespace: "myns",
+				},
+				Spec: bmh.BareMetalHostSpec{
+					ConsumerRef: &corev1.ObjectReference{
+						Name:       "mymachine1",
+						Namespace:  "myns",
+						Kind:       "Machine",
+						APIVersion: machinev1.SchemeGroupVersion.String(),
+					},
+				},
+				Status: bmh.BareMetalHostStatus{
+					HardwareProfile: "dell",
+					Provisioning: bmh.ProvisionStatus{
+						State: "deprovisioning",
+					},
+				},
+			},
+			Machine: &machinev1.Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "mymachine1",
+					Namespace: "myns",
+					Annotations: map[string]string{
+						HostAnnotation: "myns/myhost1",
+					},
+				},
+				Status: machinev1.MachineStatus{},
+			},
+			ExpectedMachineExists: true,
+		},
+		{
+			CaseName: "machine should be deleted when host deprovisioning due to deletion request",
+			Host: &bmh.BareMetalHost{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "myhost2",
+					Namespace:         "myns",
+					DeletionTimestamp: &now,
+				},
+				Spec: bmh.BareMetalHostSpec{
+					ConsumerRef: &corev1.ObjectReference{
+						Name:       "mymachine2",
+						Namespace:  "myns",
+						Kind:       "Machine",
+						APIVersion: machinev1.SchemeGroupVersion.String(),
+					},
+				},
+				Status: bmh.BareMetalHostStatus{
+					HardwareProfile: "dell",
+					Provisioning: bmh.ProvisionStatus{
+						State: "deprovisioning",
+					},
+				},
+			},
+			Machine: &machinev1.Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "mymachine2",
+					Namespace: "myns",
+					Annotations: map[string]string{
+						HostAnnotation: "myns/myhost2",
+					},
+				},
+				Status: machinev1.MachineStatus{},
+			},
+			ExpectedMachineExists: false,
+		},
+		{
+			CaseName: "deleting machine should be deleted",
+			Host: &bmh.BareMetalHost{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "myhost2",
+					Namespace:         "myns",
+					DeletionTimestamp: &now,
 				},
 				Spec: bmh.BareMetalHostSpec{
 					ConsumerRef: &corev1.ObjectReference{
