@@ -20,3 +20,19 @@ For more information about this actuator and related repositories, see
 
 See the [API Documentation](docs/api.md) for details about the `providerSpec`
 API used with this `cluster-api` provider.
+
+## MachineSet Scaling
+
+If you would like a MachineSet to be automatically scaled to the number of
+matching BareMetalHosts, annotate that MachineSet with key
+`metal3.io/autoscale-to-hosts` and any value.
+
+When reconciling a MachineSet, the controller will count all of the
+BareMetalHosts that either:
+* match the MachineSet's `Spec.Template.Spec.ProviderSpec.HostSelector` and
+  have a ConsumerRef that is `nil`
+* has a ConsumerRef that references a Machine that is part of the MachineSet
+
+This ensures that in case a BareMetalHost has previously been consumed by a
+Machine, but either labels or selectors have since been changed, it will
+continue to get counted with the MachineSet that its Machine belongs to.
