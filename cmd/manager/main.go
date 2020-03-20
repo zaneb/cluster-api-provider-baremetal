@@ -44,6 +44,7 @@ func main() {
 
 	watchNamespace := flag.String("namespace", "", "Namespace that the controller watches to reconcile machine-api objects. If unspecified, the controller watches for machine-api objects across all namespaces.")
 	metricsAddr := flag.String("metrics-addr", ":8080", "The address the metric endpoint binds to.")
+	enableLeaderElection := flag.Bool("enable-leader-election", false, "Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
 	flag.Parse()
 
 	log := logf.Log.WithName("baremetal-controller-manager")
@@ -64,6 +65,8 @@ func main() {
 	// Setup a Manager
 	opts := manager.Options{
 		MetricsBindAddress: *metricsAddr,
+		LeaderElection:     *enableLeaderElection,
+		LeaderElectionID:   "controller-leader-election-capbm",
 	}
 	if *watchNamespace != "" {
 		opts.Namespace = *watchNamespace
