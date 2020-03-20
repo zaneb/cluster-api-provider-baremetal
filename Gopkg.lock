@@ -288,6 +288,7 @@
   packages = [
     "pkg/apis",
     "pkg/apis/metal3/v1alpha1",
+    "pkg/utils",
   ]
   pruneopts = "T"
   revision = "71b826cc0f0a0686efc4fe84e2eab7e36aab27f7"
@@ -950,7 +951,7 @@
 
 [[projects]]
   branch = "release-0.2"
-  digest = "1:6cef21b5e7b84674986d1db8b31861cb9535715070924d3de77d53c141e9ea4e"
+  digest = "1:6207ac3eaebcea768da2fffc662c49082bea25f4631806ecee7a39b622afd2e0"
   name = "sigs.k8s.io/controller-runtime"
   packages = [
     "pkg/cache",
@@ -990,7 +991,7 @@
     "pkg/webhook/internal/metrics",
   ]
   pruneopts = "T"
-  revision = "aeaf98d864800cd805f87e49d6fb64d449aaba95"
+  revision = "fc5542c693e3340f8abbe91c6345bd64c494a60c"
 
 [[projects]]
   digest = "1:403a05a256885221051ab3d11ec3b026ac8eb25927fd479f6f5e70de7cc3a142"
@@ -1037,6 +1038,7 @@
     "github.com/emicklei/go-restful",
     "github.com/metal3-io/baremetal-operator/pkg/apis",
     "github.com/metal3-io/baremetal-operator/pkg/apis/metal3/v1alpha1",
+    "github.com/metal3-io/baremetal-operator/pkg/utils",
     "github.com/onsi/ginkgo",
     "github.com/onsi/gomega",
     "github.com/openshift/cluster-api/pkg/apis",

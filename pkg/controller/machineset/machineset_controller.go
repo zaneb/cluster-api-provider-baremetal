@@ -141,7 +141,7 @@ func (r *ReconcileMachineSet) Reconcile(request reconcile.Request) (reconcile.Re
 		Namespace: instance.Namespace,
 	}
 
-	err = r.List(ctx, hosts, client.UseListOptions(opts))
+	err = r.List(ctx, hosts, opts)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
