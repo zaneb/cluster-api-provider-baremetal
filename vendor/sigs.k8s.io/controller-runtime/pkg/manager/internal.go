@@ -90,9 +90,10 @@ type controllerManager struct {
 	// metricsListener is used to serve prometheus metrics
 	metricsListener net.Listener
 
-	mu      sync.Mutex
-	started bool
-	errChan chan error
+	mu            sync.Mutex
+	started       bool
+	startedLeader bool
+	errChan       chan error
 
 	// internalStop is the stop channel *actually* used by everything involved
 	// with the manager as a stop channel, so that we can pass a stop channel
@@ -110,6 +111,10 @@ type controllerManager struct {
 	port int
 	// host is the hostname that the webhook server binds to.
 	host string
+	// CertDir is the directory that contains the server key and certificate.
+	// if not set, webhook server would look up the server key and certificate in
+	// {TempDir}/k8s-webhook-server/serving-certs
+	certDir string
 
 	webhookServer *webhook.Server
 
@@ -134,14 +139,18 @@ func (cm *controllerManager) Add(r Runnable) error {
 		return err
 	}
 
+	var shouldStart bool
+
 	// Add the runnable to the leader election or the non-leaderelection list
 	if leRunnable, ok := r.(LeaderElectionRunnable); ok && !leRunnable.NeedLeaderElection() {
+		shouldStart = cm.started
 		cm.nonLeaderElectionRunnables = append(cm.nonLeaderElectionRunnables, r)
 	} else {
+		shouldStart = cm.startedLeader
 		cm.leaderElectionRunnables = append(cm.leaderElectionRunnables, r)
 	}
 
-	if cm.started {
+	if shouldStart {
 		// If already started, start the controller
 		go func() {
 			cm.errChan <- r.Start(cm.internalStop)
@@ -214,8 +223,9 @@ func (cm *controllerManager) GetAPIReader() client.Reader {
 func (cm *controllerManager) GetWebhookServer() *webhook.Server {
 	if cm.webhookServer == nil {
 		cm.webhookServer = &webhook.Server{
-			Port: cm.port,
-			Host: cm.host,
+			Port:    cm.port,
+			Host:    cm.host,
+			CertDir: cm.certDir,
 		}
 		if err := cm.Add(cm.webhookServer); err != nil {
 			panic("unable to add webhookServer to the controller manager")
@@ -225,17 +235,19 @@ func (cm *controllerManager) GetWebhookServer() *webhook.Server {
 }
 
 func (cm *controllerManager) serveMetrics(stop <-chan struct{}) {
+	var metricsPath = "/metrics"
 	handler := promhttp.HandlerFor(metrics.Registry, promhttp.HandlerOpts{
 		ErrorHandling: promhttp.HTTPErrorOnError,
 	})
 	// TODO(JoelSpeed): Use existing Kubernetes machinery for serving metrics
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", handler)
+	mux.Handle(metricsPath, handler)
 	server := http.Server{
 		Handler: mux,
 	}
 	// Run the server
 	go func() {
+		log.Info("starting metrics server", "path", metricsPath)
 		if err := server.Serve(cm.metricsListener); err != nil && err != http.ErrServerClosed {
 			cm.errChan <- err
 		}
@@ -314,6 +326,8 @@ func (cm *controllerManager) startLeaderElectionRunnables() {
 			cm.errChan <- ctrl.Start(cm.internalStop)
 		}()
 	}
+
+	cm.startedLeader = true
 }
 
 func (cm *controllerManager) waitForCache() {

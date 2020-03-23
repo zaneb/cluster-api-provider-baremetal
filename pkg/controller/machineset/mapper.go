@@ -29,7 +29,7 @@ func (m *msmapper) Map(obj handler.MapObject) []reconcile.Request {
 	requests := []reconcile.Request{}
 	if host, ok := obj.Object.(*bmh.BareMetalHost); ok {
 		msets := machinev1beta1.MachineSetList{}
-		err := m.client.List(context.TODO(), &msets, client.UseListOptions(&client.ListOptions{Namespace: host.Namespace}))
+		err := m.client.List(context.TODO(), &msets, &client.ListOptions{Namespace: host.Namespace})
 		if err != nil {
 			log.Error(err, "failed to list MachineSets")
 			return []reconcile.Request{}
