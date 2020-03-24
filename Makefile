@@ -26,6 +26,7 @@ run: generate fmt vet
 
 # Install CRDs into a cluster
 install: manifests
+	kubectl apply -f vendor/github.com/openshift/cluster-api/config/crds/
 	kubectl apply -f config/crds
 
 # Deploy controller in the configured Kubernetes cluster in ~/.kube/config
@@ -36,8 +37,6 @@ deploy: manifests
 manifests:
 	go run vendor/sigs.k8s.io/controller-tools/cmd/controller-gen/main.go all
 	kustomize build config/ > provider-components.yaml
-	echo "---" >> provider-components.yaml
-	kustomize build vendor/github.com/openshift/cluster-api/config >> provider-components.yaml
 
 # Run go fmt against code
 fmt:
