@@ -215,7 +215,7 @@ func (a *Actuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machi
 		// the Machine is deleted below in the StateDeleting block, the
 		// Machine should be deleted when no host is found.
 		log.Print("Deleting machine whose associated host is gone: ", machine.Name)
-		a.client.Delete(ctx, machine)
+		err = a.client.Delete(ctx, machine)
 		if err != nil && !errors.IsNotFound(err) {
 			return err
 		}
@@ -239,7 +239,7 @@ func (a *Actuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machi
 		}
 
 		log.Print("Deleting machine whose associated host is gone: ", machine.Name)
-		a.client.Delete(ctx, machine)
+		err = a.client.Delete(ctx, machine)
 		if err != nil && !errors.IsNotFound(err) {
 			return err
 		}
