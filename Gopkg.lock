@@ -128,12 +128,12 @@
   version = "v0.19.4"
 
 [[projects]]
-  digest = "1:92755a73daaa2397bbd4fd7b14d920decd24c0669b1d58db7e4ef986b1934e5f"
-  name = "github.com/gobuffalo/envy"
+  digest = "1:732a5d1779a864055dfcaa46deb1e7bea9b4de4f29eead5b44309893cf5f75b5"
+  name = "github.com/gobuffalo/flect"
   packages = ["."]
   pruneopts = "T"
-  revision = "043cb4b8af871b49563291e32c66bb84378a60ac"
-  version = "v1.7.0"
+  revision = "7a04ff140e0fd2ea77adfd5b8bd2b0c80ab739a9"
+  version = "v0.2.1"
 
 [[projects]]
   digest = "1:c6e109ed32d266dea072dd6d00e3ee26fb960f86ed0ba7f6a07e5d2bfdeab868"
@@ -238,14 +238,6 @@
   version = "v1.0"
 
 [[projects]]
-  digest = "1:ee5840274624ad20cac08227aeca582fbdaf3727ef9dd37ae935706240679e09"
-  name = "github.com/joho/godotenv"
-  packages = ["."]
-  pruneopts = "T"
-  revision = "23d116af351c84513e1946b527c88823e476be13"
-  version = "v1.3.0"
-
-[[projects]]
   digest = "1:e4f630893d2bbf8c268eba14e7cc92ef8844ee259a45e21ea77cf7656544cb7e"
   name = "github.com/json-iterator/go"
   packages = ["."]
@@ -264,14 +256,6 @@
   ]
   pruneopts = "T"
   revision = "b2ccc519800e761ac8000b95e5d57c80a897ff9e"
-
-[[projects]]
-  digest = "1:3804a3a02964db8e6db3e5e7960ac1c1a9b12835642dd4f4ac4e56c749ec73eb"
-  name = "github.com/markbates/inflect"
-  packages = ["."]
-  pruneopts = "T"
-  revision = "24b83195037b3bc61fcda2d28b7b0518bce293b6"
-  version = "v1.0.4"
 
 [[projects]]
   digest = "1:a8e3d14801bed585908d130ebfc3b925ba642208e6f30d879437ddfc7bb9b413"
@@ -361,8 +345,8 @@
   version = "v1.5.0"
 
 [[projects]]
-  branch = "openshift-4.2-cluster-api-0.1.0"
-  digest = "1:171b0ade450399f4dda18b9236531ea5d160c69745d03b36db74c85e72d86a11"
+  branch = "release-4.5"
+  digest = "1:a36d350cc349c5b130c10b718f19530e14ef50285616c5db863a9f6c42bf82c8"
   name = "github.com/openshift/cluster-api"
   packages = [
     "pkg/apis",
@@ -373,10 +357,11 @@
     "pkg/controller/error",
     "pkg/controller/machine",
     "pkg/drain",
+    "pkg/errors",
     "pkg/util",
   ]
   pruneopts = "T"
-  revision = "b2bf995e2bba939cf7ae0419b6a195676e9690d0"
+  revision = "b09907ac666894610ad44787def00be738c8a2f1"
 
 [[projects]]
   digest = "1:e5d0bd87abc2781d14e274807a470acd180f0499f8bf5bb18606e9ec22ad9de9"
@@ -436,18 +421,6 @@
   pruneopts = "T"
   revision = "3f98efb27840a48a7a2898ec80be07674d19f9c8"
   version = "v0.0.3"
-
-[[projects]]
-  digest = "1:5e2ebcff4614ac5a6d9abbbaaa6df76082658d797621f2a25e54c5e5e4203161"
-  name = "github.com/rogpeppe/go-internal"
-  packages = [
-    "modfile",
-    "module",
-    "semver",
-  ]
-  pruneopts = "T"
-  revision = "438578804ca6f31be148c27683afc419ce47c06e"
-  version = "v1.3.0"
 
 [[projects]]
   digest = "1:dee0cc3252ce6fcc3334c9529abd32925f2aaf072c90336a5a38254953564aa5"
@@ -994,7 +967,7 @@
   revision = "fc5542c693e3340f8abbe91c6345bd64c494a60c"
 
 [[projects]]
-  digest = "1:403a05a256885221051ab3d11ec3b026ac8eb25927fd479f6f5e70de7cc3a142"
+  digest = "1:46aa448122b04f923ce877ab57d4649dfe5437a028ae8700876d7c5070909b08"
   name = "sigs.k8s.io/controller-tools"
   packages = [
     "cmd/controller-gen",
@@ -1008,8 +981,8 @@
     "pkg/webhook",
   ]
   pruneopts = "T"
-  revision = "464fbed97efaced33902e262f09c5eae7315c3e3"
-  version = "v0.1.11"
+  revision = "eb20812245b721a69012140fcf07e887b4f2e5d8"
+  version = "v0.1.12"
 
 [[projects]]
   digest = "1:290b4da306982122bcdff12dbababbb95c6e4a94a2995db88baf235ef2f6e93e"
