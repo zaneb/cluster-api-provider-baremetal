@@ -59,7 +59,7 @@ spec:
         matchExpressions:
           key: key2
           operator: in
-          values: {‘abc’, ‘123’, ‘value2’}
+          values: {'abc', '123', 'value2'}
   versions:
     kubelet: ""
 ```
@@ -143,7 +143,7 @@ spec:
         matchExpressions:
           - key: key3
             operator: in
-            values: [‘a’, ‘b’, ‘c’]
+            values: ['a', 'b', 'c']
 ```
 
 Example 3: Only consider `BareMetalHost` with `key1` set to `value1` AND `key2`
@@ -160,5 +160,5 @@ spec:
         matchExpressions:
           - key: key3
             operator: in
-            values: [‘a’, ‘b’, ‘c’]
+            values: ['a', 'b', 'c']
 ```
