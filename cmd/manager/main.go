@@ -19,7 +19,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/metal3-io/cluster-api-provider-baremetal/pkg/controller/machine_remediation"
 	"os"
 	"time"
 
@@ -104,11 +103,6 @@ func main() {
 
 	if err := controller.AddToManager(mgr); err != nil {
 		log.Error(err, "Failed to add controller to manager")
-		os.Exit(1)
-	}
-
-	if err := machine_remediation.Add(mgr); err != nil {
-		log.Error(err, "Failed to add machine remediation controller to manager")
 		os.Exit(1)
 	}
 
