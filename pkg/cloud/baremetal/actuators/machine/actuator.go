@@ -635,7 +635,7 @@ func (a *Actuator) addRemediationInProgressAnnotation(ctx context.Context, machi
 	return err
 }
 
-//requestPowerOn removes reboot annotation on baremetalhost which signal BMO to power on the machine
+//requestPowerOff adds reboot annotation on baremetalhost which signal BMO to power off the machine
 func (a *Actuator) requestPowerOff(ctx context.Context, baremetalhost *bmh.BareMetalHost) error {
 	if baremetalhost.Annotations == nil {
 		baremetalhost.Annotations = make(map[string]string)
@@ -651,7 +651,7 @@ func (a *Actuator) requestPowerOff(ctx context.Context, baremetalhost *bmh.BareM
 	return err
 }
 
-//requestPowerOn adds reboot annotation on baremetalhost which signal BMO to power off the machine
+//requestPowerOn removes reboot annotation from baremetalhost which signal BMO to power on the machine
 func (a *Actuator) requestPowerOn(ctx context.Context, baremetalhost *bmh.BareMetalHost) error {
 	if baremetalhost.Annotations == nil {
 		baremetalhost.Annotations = make(map[string]string)
