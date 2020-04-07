@@ -1634,9 +1634,9 @@ func TestDeleteOfBareMetalHostDeletesMachine(t *testing.T) {
 }
 
 func TestRemediation(t *testing.T) {
-	machine, machineNamespacedName := getMachine()
-	host, hostNamespacedName := getBareMetalHost()
-	node, nodeNamespacedName := geteNode()
+	machine, machineNamespacedName := getMachine("machine1")
+	host, hostNamespacedName := getBareMetalHost("host1")
+	node, nodeNamespacedName := getNode("node1")
 	linkMachineAndNode(machine, node)
 	host.Status.PoweredOn = true
 
@@ -1720,7 +1720,7 @@ func TestRemediation(t *testing.T) {
 	host.Status.PoweredOn = true
 	c.Update(context.TODO(), host)
 
-	node, _ = geteNode()
+	node, _ = getNode("node1")
 	linkMachineAndNode(machine, node)
 	c.Create(context.TODO(), node)
 	c.Update(context.TODO(), machine)
@@ -1764,9 +1764,9 @@ func TestRemediation(t *testing.T) {
 	}
 }
 
-func geteNode() (*corev1.Node, types.NamespacedName) {
+func getNode(name string) (*corev1.Node, types.NamespacedName) {
 	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{
-		Name:      "node1",
+		Name:      name,
 		Namespace: testRemediationNamespace,
 	},
 		TypeMeta: metav1.TypeMeta{
@@ -1782,10 +1782,10 @@ func geteNode() (*corev1.Node, types.NamespacedName) {
 	return node, nodeNamespacedName
 }
 
-func getBareMetalHost() (*bmh.BareMetalHost, types.NamespacedName) {
+func getBareMetalHost(name string) (*bmh.BareMetalHost, types.NamespacedName) {
 	host := &bmh.BareMetalHost{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "host1",
+			Name:      name,
 			Namespace: "default",
 		},
 		TypeMeta: metav1.TypeMeta{
@@ -1804,10 +1804,10 @@ func getBareMetalHost() (*bmh.BareMetalHost, types.NamespacedName) {
 	return host, hostNamespacedName
 }
 
-func getMachine() (*machinev1.Machine, types.NamespacedName) {
+func getMachine(name string) (*machinev1.Machine, types.NamespacedName) {
 	machine := &machinev1.Machine{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "machine1",
+			Name:      name,
 			Namespace: testRemediationNamespace,
 		},
 		TypeMeta: metav1.TypeMeta{
