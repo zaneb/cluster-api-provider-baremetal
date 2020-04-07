@@ -658,7 +658,7 @@ func (a *Actuator) requestPowerOn(ctx context.Context, baremetalhost *bmh.BareMe
 	}
 
 	if _, rebootPending := baremetalhost.Annotations[requestPowerOffAnnotation]; !rebootPending {
-		return &clustererror.RequeueAfterError{}
+		return &clustererror.RequeueAfterError{RequeueAfter: time.Second * 5}
 	}
 
 	delete(baremetalhost.Annotations, requestPowerOffAnnotation)
