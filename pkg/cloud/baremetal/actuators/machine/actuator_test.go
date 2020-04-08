@@ -5,7 +5,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"testing"
 	"time"
-
 	bmoapis "github.com/metal3-io/baremetal-operator/pkg/apis"
 	bmh "github.com/metal3-io/baremetal-operator/pkg/apis/metal3/v1alpha1"
 	bmv1alpha1 "github.com/openshift/cluster-api-provider-baremetal/pkg/apis/baremetal/v1alpha1"
@@ -1693,7 +1692,12 @@ func TestRemediation(t *testing.T) {
 
 	err = actuator.Update(context.TODO(), nil, machine)
 	if err != nil {
-		t.Errorf("unexpected error %v", err)
+		switch err.(type) {
+			case *clustererror.RequeueAfterError:
+				break
+			default:
+				t.Errorf("unexpected error %v", err)
+		}
 	}
 
 	node = &corev1.Node{}
