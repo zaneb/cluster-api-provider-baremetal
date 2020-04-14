@@ -46,8 +46,11 @@ const (
 	ProviderName = "baremetal"
 	// HostAnnotation is the key for an annotation that should go on a Machine to
 	// reference what BareMetalHost it corresponds to.
-	HostAnnotation = "metal3.io/BareMetalHost"
-	requeueAfter   = time.Second * 30
+	HostAnnotation                  = "metal3.io/BareMetalHost"
+	requeueAfter                    = time.Second * 30
+	externalRemediationAnnotation   = "host.metal3.io/external-remediation"
+	poweredOffForRemediation        = "remediation.metal3.io/powered-off-for-remediation"
+	requestPowerOffAnnotation       = "reboot.metal3.io/capbm-requested-power-off"
 )
 
 // Add RBAC rules to access cluster-api resources
@@ -131,7 +134,7 @@ func (a *Actuator) Create(ctx context.Context, cluster *clusterv1.Cluster, machi
 		return err
 	}
 
-	err = a.ensureAnnotation(ctx, machine, host)
+	_, err = a.ensureAnnotation(ctx, machine, host)
 	if err != nil {
 		return err
 	}
@@ -247,9 +250,15 @@ func (a *Actuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machi
 		return nil
 	}
 
-	err = a.ensureAnnotation(ctx, machine, host)
+	dirty, err := a.ensureAnnotation(ctx, machine, host)
 	if err != nil {
 		return err
+	}
+
+	if !dirty {
+		if err := a.remediateIfNeeded(ctx, machine, host); err != nil {
+			return err
+		}
 	}
 
 	if err := a.updateMachineStatus(ctx, machine, host); err != nil {
@@ -457,7 +466,8 @@ func (a *Actuator) setHostSpec(ctx context.Context, host *bmh.BareMetalHost, mac
 
 // ensureAnnotation makes sure the machine has an annotation that references the
 // host and uses the API to update the machine if necessary.
-func (a *Actuator) ensureAnnotation(ctx context.Context, machine *machinev1.Machine, host *bmh.BareMetalHost) error {
+// it returns a boolean to indicate if the machine object was changed
+func (a *Actuator) ensureAnnotation(ctx context.Context, machine *machinev1.Machine, host *bmh.BareMetalHost) (bool, error) {
 	annotations := machine.ObjectMeta.GetAnnotations()
 	if annotations == nil {
 		annotations = make(map[string]string)
@@ -465,18 +475,18 @@ func (a *Actuator) ensureAnnotation(ctx context.Context, machine *machinev1.Mach
 	hostKey, err := cache.MetaNamespaceKeyFunc(host)
 	if err != nil {
 		log.Printf("Error parsing annotation value \"%s\": %v", hostKey, err)
-		return err
+		return false, err
 	}
 	existing, ok := annotations[HostAnnotation]
 	if ok {
 		if existing == hostKey {
-			return nil
+			return false, nil
 		}
 		log.Printf("Warning: found stray annotation for host %s on machine %s. Overwriting.", existing, machine.Name)
 	}
 	annotations[HostAnnotation] = hostKey
 	machine.ObjectMeta.SetAnnotations(annotations)
-	return a.client.Update(ctx, machine)
+	return true, a.client.Update(ctx, machine)
 }
 
 // setError sets the ErrorMessage and ErrorReason fields on the machine and logs
@@ -583,4 +593,193 @@ func (a *Actuator) nodeAddresses(host *bmh.BareMetalHost) ([]corev1.NodeAddress,
 	}
 
 	return addrs, nil
+}
+
+//deleteRemediationAnnotations deletes poweredOffForRemediation and remediation strategy annotations
+func (a *Actuator) deleteRemediationAnnotations(ctx context.Context, machine *machinev1.Machine) error {
+	if len(machine.Annotations) == 0 {
+		return nil
+	}
+
+	delete(machine.Annotations, poweredOffForRemediation)
+	delete(machine.Annotations, externalRemediationAnnotation)
+
+	if err := a.client.Update(ctx, machine); err != nil {
+		log.Printf("Failed to delete annotations of Machine: %s", machine.Name)
+		return err
+	}
+
+	return nil
+}
+
+//hasPowerOffRequestAnnotation checks if the requestPowerOffAnnotation exists on the baremetalhost
+func hasPowerOffRequestAnnotation(baremetalhost *bmh.BareMetalHost) (exists bool) {
+	if len(baremetalhost.Annotations) > 0 {
+		_, exists = baremetalhost.Annotations[requestPowerOffAnnotation]
+	}
+	return
+}
+
+//addPoweredOffForRemediationAnnotation adds a powered-off-for-remediation annotation to the machine
+func (a *Actuator) addPoweredOffForRemediationAnnotation(ctx context.Context, machine *machinev1.Machine) error {
+	if machine.Annotations == nil {
+		machine.Annotations = make(map[string]string)
+	}
+
+	machine.Annotations[poweredOffForRemediation] = ""
+
+	err := a.client.Update(ctx, machine)
+	if err != nil {
+		log.Printf("Failed to add remediation in progess annotation to %s: %s", machine.Name, err.Error())
+	}
+
+	return err
+}
+
+//requestPowerOff adds requestPowerOffAnnotation on baremetalhost which signals BMO to power off the machine
+func (a *Actuator) requestPowerOff(ctx context.Context, baremetalhost *bmh.BareMetalHost) error {
+	if baremetalhost.Annotations == nil {
+		baremetalhost.Annotations = make(map[string]string)
+	}
+
+	if _, powerOffRequestExists := baremetalhost.Annotations[requestPowerOffAnnotation]; powerOffRequestExists {
+		return &clustererror.RequeueAfterError{RequeueAfter: time.Second * 5}
+	}
+
+	baremetalhost.Annotations[requestPowerOffAnnotation] = ""
+
+	err := a.client.Update(ctx, baremetalhost)
+	if err != nil {
+		log.Printf("failed to add power off request annotation to %s: %s", baremetalhost.Name, err.Error())
+	}
+
+	return err
+}
+
+//requestPowerOn removes requestPowerOffAnnotation from baremetalhost which signals BMO to power on the machine
+func (a *Actuator) requestPowerOn(ctx context.Context, baremetalhost *bmh.BareMetalHost) error {
+	if baremetalhost.Annotations == nil {
+		baremetalhost.Annotations = make(map[string]string)
+	}
+
+	if _, powerOffRequestExists := baremetalhost.Annotations[requestPowerOffAnnotation]; !powerOffRequestExists {
+		return &clustererror.RequeueAfterError{RequeueAfter: time.Second * 5}
+	}
+
+	delete(baremetalhost.Annotations, requestPowerOffAnnotation)
+
+	err := a.client.Update(ctx, baremetalhost)
+	if err != nil {
+		log.Printf("failed to power-off request annotation from %s: %s", baremetalhost.Name, err.Error())
+	}
+
+	return err
+}
+
+// deleteMachineNode deletes the node that mapped to specified machine
+func (a *Actuator) deleteNode(ctx context.Context, node *corev1.Node) error {
+	if !node.DeletionTimestamp.IsZero() {
+		return &clustererror.RequeueAfterError{RequeueAfter: time.Second * 2}
+	}
+
+	err := a.client.Delete(ctx, node)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return &clustererror.RequeueAfterError{}
+		}
+		log.Printf("Failed to delete node %s: %s", node.Name, err.Error())
+		return err
+	}
+	return &clustererror.RequeueAfterError{RequeueAfter: time.Second * 2}
+}
+
+// getNodeByMachine returns the node object referenced by machine
+func (a *Actuator) getNodeByMachine(ctx context.Context, machine *machinev1.Machine) (*corev1.Node, error) {
+	if machine.Status.NodeRef == nil {
+		return nil, errors.NewNotFound(corev1.Resource("ObjectReference"), machine.Name)
+	}
+
+	node := &corev1.Node{}
+	key := client.ObjectKey{
+		Name:      machine.Status.NodeRef.Name,
+		Namespace: machine.Status.NodeRef.Namespace,
+	}
+
+	if err := a.client.Get(ctx, key, node); err != nil {
+		return nil, err
+	}
+	return node, nil
+}
+
+/*
+remediateIfNeeded will try to remediate unhealthy machines (annotated by MHC) by power-cycle the host
+The full remediation flow is:
+1) Power off the host
+2) Add poweredOffForRemediation annotation to the unhealthy Machine
+3) Delete the node
+4) Power on the host
+5) Wait for the node the come up (by waiting for the node to be registered in the cluster)
+6) Remove poweredOffForRemediation annotation and the MAO's machine unhealthy annotation
+*/
+func (a *Actuator) remediateIfNeeded(ctx context.Context, machine *machinev1.Machine, baremetalhost *bmh.BareMetalHost) error {
+	if len(machine.Annotations) == 0 {
+		return nil
+	}
+
+	if _, needsRemediation := machine.Annotations[externalRemediationAnnotation]; !needsRemediation {
+		return nil
+	}
+
+	if _, poweredOffForRemediation := machine.Annotations[poweredOffForRemediation]; !poweredOffForRemediation {
+		if !hasPowerOffRequestAnnotation(baremetalhost) {
+			log.Printf("Found an unhealthy machine, requesting power off. Machine name: %s", machine.Name)
+			return a.requestPowerOff(ctx, baremetalhost)
+		}
+
+		//hold remediation until the power off request is fulfilled
+		if baremetalhost.Status.PoweredOn {
+			return nil
+		}
+
+		//we need this annotation to differentiate between unhealthy machine that
+		//needs remediation, and an unhealthy machine that just got remediated
+		return a.addPoweredOffForRemediationAnnotation(ctx, machine)
+	}
+
+	node, err := a.getNodeByMachine(ctx, machine)
+
+	if err != nil {
+		if !errors.IsNotFound(err) {
+			log.Printf("Failed to get Node from Machine %s: %s", machine.Name, err.Error())
+			return err
+		}
+	}
+
+	if !baremetalhost.Status.PoweredOn {
+		if node != nil {
+			log.Printf("Deleting Node %s associated with Machine %s", node.Name, machine.Name)
+			/*
+				Delete the node only after the host is powered off. Otherwise, if we would delete the node
+				when the host is powered on, the scheduler would assign the workload to other nodes, with the
+				possibility that two instances of the same application are running in parallel. This might result
+				in corruption or other issues for applications with singleton requirement. After the host is powered
+				off we know for sure that it is safe to re-assign that workload to other nodes.
+			*/
+			return a.deleteNode(ctx, node)
+		}
+
+		// node is deleted, we can power on the host
+		log.Printf("Requesting Host %s power on for Machine %s",
+			baremetalhost.Name, machine.Name)
+		return a.requestPowerOn(ctx, baremetalhost)
+	}
+
+	//node is still not running, so we requeue
+	if node == nil {
+		return &clustererror.RequeueAfterError{RequeueAfter: time.Second * 5}
+	}
+
+	// node is now available again
+	log.Printf("Node %s is available, remediation of Machine %s complete", node.Name, machine.Name)
+	return a.deleteRemediationAnnotations(ctx, machine)
 }
