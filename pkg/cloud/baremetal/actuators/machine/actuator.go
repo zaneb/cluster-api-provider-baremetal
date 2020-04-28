@@ -44,11 +44,13 @@ const (
 	ProviderName = "baremetal"
 	// HostAnnotation is the key for an annotation that should go on a Machine to
 	// reference what BareMetalHost it corresponds to.
-	HostAnnotation                = "metal3.io/BareMetalHost"
-	requeueAfter                  = time.Second * 30
-	externalRemediationAnnotation = "host.metal3.io/external-remediation"
-	poweredOffForRemediation      = "remediation.metal3.io/powered-off-for-remediation"
-	requestPowerOffAnnotation     = "reboot.metal3.io/capbm-requested-power-off"
+	HostAnnotation                  = "metal3.io/BareMetalHost"
+	requeueAfter                    = time.Second * 30
+	externalRemediationAnnotation   = "host.metal3.io/external-remediation"
+	poweredOffForRemediation        = "remediation.metal3.io/powered-off-for-remediation"
+	requestPowerOffAnnotation       = "reboot.metal3.io/capbm-requested-power-off"
+	nodeLabelsBackupAnnotation      = "remediation.metal3.io/nodeLabelsBackup"
+	nodeAnnotationsBackupAnnotation = "remediation.metal3.io/nodeAnnotationsBackup"
 )
 
 // Add RBAC rules to access cluster-api resources
@@ -714,10 +716,12 @@ remediateIfNeeded will try to remediate unhealthy machines (annotated by MHC) by
 The full remediation flow is:
 1) Power off the host
 2) Add poweredOffForRemediation annotation to the unhealthy Machine
-3) Delete the node
-4) Power on the host
-5) Wait for the node the come up (by waiting for the node to be registered in the cluster)
-6) Remove poweredOffForRemediation annotation and the MAO's machine unhealthy annotation
+3) Store node's annotations and labels in Machine's annotations
+4) Delete the node
+5) Power on the host
+6) Wait for the node the come up (by waiting for the node to be registered in the cluster)
+7) Restore node's annotations and labels
+8) Remove poweredOffForRemediation annotation, MAO's machine unhealthy annotation and annotations/labels backup
 */
 func (a *Actuator) remediateIfNeeded(ctx context.Context, machine *machinev1beta1.Machine, baremetalhost *bmh.BareMetalHost) error {
 	if len(machine.Annotations) == 0 {
@@ -755,6 +759,12 @@ func (a *Actuator) remediateIfNeeded(ctx context.Context, machine *machinev1beta
 
 	if !baremetalhost.Status.PoweredOn {
 		if node != nil {
+			//we want to keep existing node's annotations and labels before we delete the node.
+			//we will restore them once the node is up again
+			if _, annotationsBackupExists := machine.Annotations[nodeAnnotationsBackupAnnotation]; !annotationsBackupExists {
+				return a.storeAnnotationsAndLabels(node, machine, ctx)
+			}
+
 			log.Printf("Deleting Node %s associated with Machine %s", node.Name, machine.Name)
 			/*
 				Delete the node only after the host is powered off. Otherwise, if we would delete the node
@@ -777,7 +787,106 @@ func (a *Actuator) remediateIfNeeded(ctx context.Context, machine *machinev1beta
 		return &machineapierrors.RequeueAfterError{RequeueAfter: time.Second * 5}
 	}
 
-	// node is now available again
+	// node is now available again - restore annotations and labels
+	if _, annotationsBackupExists := machine.Annotations[nodeAnnotationsBackupAnnotation]; annotationsBackupExists {
+		return a.restoreAnnotationsAndLabels(node, machine, ctx)
+	}
+
+	//remediation is done
 	log.Printf("Node %s is available, remediation of Machine %s complete", node.Name, machine.Name)
 	return a.deleteRemediationAnnotations(ctx, machine)
+}
+
+// storeAnnotationsAndLabels copies node's annotations and labels and stores them on machine's annotations
+func (a *Actuator) storeAnnotationsAndLabels(node *corev1.Node, machine *machinev1.Machine, ctx context.Context) error {
+	marshaledAnnotations, err := marshal(node.Annotations)
+	if err != nil {
+		log.Printf("Failes to marshal node %s annotations assoicated with Machine %s: %s",
+			node.Name, machine.Name, err.Error())
+		return err
+	}
+
+	marshaledLabels, err := marshal(node.Labels)
+	if err != nil {
+		log.Printf("Failes to marshal node %s labels assoicated with Machine %s: %s",
+			node.Name, machine.Name, err.Error())
+		return err
+	}
+
+	machine.Annotations[nodeLabelsBackupAnnotation] = marshaledLabels
+	machine.Annotations[nodeAnnotationsBackupAnnotation] = marshaledAnnotations
+
+	err = a.client.Update(ctx, machine)
+	if err != nil {
+		log.Printf("failed to update machine with node's annotations and labels %s: %s", machine.Name, err.Error())
+		return err
+	}
+
+	return &clustererror.RequeueAfterError{}
+}
+
+// restoreAnnotationsAndLabels copies annotations and labels stored in machine's annotation to the node
+// and removes the annotations used to store that data
+func (a *Actuator) restoreAnnotationsAndLabels(node *corev1.Node, machine *machinev1.Machine, ctx context.Context) error {
+	if len(machine.Annotations) == 0 {
+		return &clustererror.RequeueAfterError{}
+	}
+
+	nodeAnn, err := unmarshal(machine.Annotations[nodeAnnotationsBackupAnnotation])
+	if err != nil {
+		log.Printf("failed to unmarshal node's annotations from %s: %s", machine.Name, err.Error())
+		return err
+	}
+
+	nodeLabels, err := unmarshal(machine.Annotations[nodeLabelsBackupAnnotation])
+	if err != nil {
+		log.Printf("failed to unmarshal node's labels from %s: %s", machine.Name, err.Error())
+		return err
+	}
+
+	node.Annotations = nodeAnn
+	node.Labels = nodeLabels
+
+	if err := a.client.Update(ctx, node); err != nil {
+		log.Printf("failed to update machine with node's annotations %s: %s", machine.Name, err.Error())
+		return err
+	}
+
+	delete(machine.Annotations, nodeAnnotationsBackupAnnotation)
+	delete(machine.Annotations, nodeLabelsBackupAnnotation)
+
+	err = a.client.Update(ctx, machine)
+	if err != nil {
+		log.Printf("failed to remove node %s annotations backup from machine %s: %s",
+			node.Name, machine.Name, err.Error())
+		return err
+	}
+
+	return &clustererror.RequeueAfterError{}
+}
+
+// marshal is a wrapper for json.marshal() and converts its output to string
+// if m is nil or empty an empty string will be returned
+func marshal(m map[string]string) (string, error) {
+	var err error
+	var marshaled []byte
+
+	if len(m) > 0 {
+		marshaled, err = json.Marshal(m)
+		if err != nil {
+			return "", err
+		}
+	}
+	return string(marshaled), nil
+}
+
+// unmarshal is a wrapper for json.Unmarshal() for marshaled strings that represent map[string]string
+func unmarshal(marshaled string) (map[string]string, error) {
+	decodedValue := make(map[string]string)
+
+	if err := json.Unmarshal([]byte(marshaled), &decodedValue); err != nil {
+		return nil, err
+	}
+
+	return decodedValue, nil
 }
