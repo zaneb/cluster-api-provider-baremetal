@@ -10,3 +10,7 @@ reviewers:
   - dhellmann
   - mhrivnak
   - hardys
+
+# Bugzilla Information
+component: "Bare Metal Hardware Provisioning"
+subcomponent: "cluster-api-provider"
