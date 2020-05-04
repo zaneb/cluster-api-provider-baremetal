@@ -1632,6 +1632,63 @@ func TestDeleteOfBareMetalHostDeletesMachine(t *testing.T) {
 	}
 }
 
+func TestMarshalAndUnmarshal(t *testing.T) {
+	m := map[string]string{"key1":"val1","keyWithEmptyValue":"","key.with.dots":"value.with.dots"}
+
+	marshaled, err := marshal(m)
+
+	if err != nil {
+		t.Errorf("marshal() returned an err: %s", err.Error())
+	}
+
+	unmarshaled, err := unmarshal(marshaled)
+
+	if err != nil {
+		t.Errorf("unmarshal returned an err: %s", err.Error())
+	}
+
+	if !reflect.DeepEqual(unmarshaled, m) {
+		t.Errorf("map is different after unmarshal(marshal(map)). Original map was: %s , unmarshaled map: %s",
+					m, unmarshaled)
+	}
+
+	m = nil
+
+	marshaled, err = marshal(m)
+
+	if err != nil {
+		t.Errorf("marshal() returned an err: %s", err.Error())
+	}
+
+	unmarshaled, err = unmarshal(marshaled)
+
+	if err != nil {
+		t.Errorf("unmarshal returned an err: %s", err.Error())
+	}
+
+	if len(unmarshaled) != 0 {
+		t.Errorf("Expected unmarshal(marshal(nil)) to return an empty map but recieved: %s", unmarshaled)
+	}
+
+	m = make(map[string]string)
+
+	marshaled, err = marshal(m)
+
+	if err != nil {
+		t.Errorf("marshal() returned an err: %s", err.Error())
+	}
+
+	unmarshaled, err = unmarshal(marshaled)
+
+	if err != nil {
+		t.Errorf("unmarshal returned an err: %s", err.Error())
+	}
+
+	if len(unmarshaled) != 0 {
+		t.Errorf("Expected unmarshal(marshal([])) to return an empty map but recieved: %s", unmarshaled)
+	}
+}
+
 func TestRemediation(t *testing.T) {
 	machine, machineNamespacedName := getMachine("machine1")
 	host, hostNamespacedName := getBareMetalHost("host1")
