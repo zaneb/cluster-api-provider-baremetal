@@ -882,6 +882,10 @@ func marshal(m map[string]string) (string, error) {
 
 // unmarshal is a wrapper for json.Unmarshal() for marshaled strings that represent map[string]string
 func unmarshal(marshaled string) (map[string]string, error) {
+	if marshaled == "" {
+		return make(map[string]string), nil
+	}
+
 	decodedValue := make(map[string]string)
 
 	if err := json.Unmarshal([]byte(marshaled), &decodedValue); err != nil {
