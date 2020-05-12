@@ -197,22 +197,6 @@
   version = "v0.3.0"
 
 [[projects]]
-  digest = "1:af105c7c5dc0b4ae41991f122cae860b9600f7d226072c2a83127048c991660c"
-  name = "github.com/hashicorp/go-cleanhttp"
-  packages = ["."]
-  pruneopts = "T"
-  revision = "eda1e5db218aad1db63ca4642c8906b26bcf2744"
-  version = "v0.5.1"
-
-[[projects]]
-  digest = "1:bf3ab1d0c61613b0a145787ee2f006fd5a4f3a9ee54e62207b46440dd01532d7"
-  name = "github.com/hashicorp/go-retryablehttp"
-  packages = ["."]
-  pruneopts = "T"
-  revision = "eaff869a704e190d92996f23c23a4037cf2b0770"
-  version = "v0.6.4"
-
-[[projects]]
   digest = "1:d15ee511aa0f56baacc1eb4c6b922fa1c03b38413b6be18166b996d82a0156ea"
   name = "github.com/hashicorp/golang-lru"
   packages = [
@@ -933,7 +917,6 @@
   packages = [
     "buffer",
     "integer",
-    "pointer",
     "trace",
   ]
   pruneopts = "T"
@@ -1026,7 +1009,6 @@
   analyzer-version = 1
   input-imports = [
     "github.com/emicklei/go-restful",
-    "github.com/hashicorp/go-retryablehttp",
     "github.com/metal3-io/baremetal-operator/pkg/apis",
     "github.com/metal3-io/baremetal-operator/pkg/apis/metal3/v1alpha1",
     "github.com/metal3-io/baremetal-operator/pkg/utils",
@@ -1059,7 +1041,6 @@
     "k8s.io/code-generator/cmd/client-gen",
     "k8s.io/code-generator/cmd/deepcopy-gen",
     "k8s.io/klog",
-    "k8s.io/utils/pointer",
     "sigs.k8s.io/controller-runtime/pkg/cache",
     "sigs.k8s.io/controller-runtime/pkg/client",
     "sigs.k8s.io/controller-runtime/pkg/client/config",
