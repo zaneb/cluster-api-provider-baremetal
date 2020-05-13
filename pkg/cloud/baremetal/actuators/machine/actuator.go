@@ -49,8 +49,8 @@ const (
 	externalRemediationAnnotation   = "host.metal3.io/external-remediation"
 	poweredOffForRemediation        = "remediation.metal3.io/powered-off-for-remediation"
 	requestPowerOffAnnotation       = "reboot.metal3.io/capbm-requested-power-off"
-	nodeLabelsBackupAnnotation      = "remediation.metal3.io/nodeLabelsBackup"
-	nodeAnnotationsBackupAnnotation = "remediation.metal3.io/nodeAnnotationsBackup"
+	nodeLabelsBackupAnnotation      = "remediation.metal3.io/node-labels-backup"
+	nodeAnnotationsBackupAnnotation = "remediation.metal3.io/node-annotations-backup"
 	nodeFinalizer                   = "machine.openshift.io"
 )
 
