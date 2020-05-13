@@ -766,12 +766,11 @@ remediateIfNeeded will try to remediate unhealthy machines (annotated by MHC) by
 The full remediation flow is:
 1) Power off the host
 2) Add poweredOffForRemediation annotation to the unhealthy Machine
-3) Store node's annotations and labels in Machine's annotations
-4) Delete the node
-5) Power on the host
-6) Wait for the node the come up (by waiting for the node to be registered in the cluster)
-7) Restore node's annotations and labels
-8) Remove poweredOffForRemediation annotation, MAO's machine unhealthy annotation and annotations/labels backup
+3) Delete the node
+4) Power on the host
+5) Wait for the node the come up (by waiting for the node to be registered in the cluster)
+6) Restore node's annotations and labels
+7) Remove poweredOffForRemediation annotation, MAO's machine unhealthy annotation and annotations/labels backup
 */
 func (a *Actuator) remediateIfNeeded(ctx context.Context, machine *machinev1beta1.Machine, baremetalhost *bmh.BareMetalHost) error {
 	if len(machine.Annotations) == 0 {
