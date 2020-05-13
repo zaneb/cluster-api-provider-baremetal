@@ -18,19 +18,12 @@ package machine
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"math/rand"
-	"net/http"
 	"strings"
 	"time"
 
-	retryablehttp "github.com/hashicorp/go-retryablehttp"
 	bmh "github.com/metal3-io/baremetal-operator/pkg/apis/metal3/v1alpha1"
 	"github.com/metal3-io/baremetal-operator/pkg/utils"
 	bmv1alpha1 "github.com/openshift/cluster-api-provider-baremetal/pkg/apis/baremetal/v1alpha1"
@@ -45,7 +38,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 )
@@ -54,11 +46,11 @@ const (
 	ProviderName = "baremetal"
 	// HostAnnotation is the key for an annotation that should go on a Machine to
 	// reference what BareMetalHost it corresponds to.
-	HostAnnotation                = "metal3.io/BareMetalHost"
-	requeueAfter                  = time.Second * 30
-	externalRemediationAnnotation = "host.metal3.io/external-remediation"
-	poweredOffForRemediation      = "remediation.metal3.io/powered-off-for-remediation"
-	requestPowerOffAnnotation     = "reboot.metal3.io/capbm-requested-power-off"
+	HostAnnotation                  = "metal3.io/BareMetalHost"
+	requeueAfter                    = time.Second * 30
+	externalRemediationAnnotation   = "host.metal3.io/external-remediation"
+	poweredOffForRemediation        = "remediation.metal3.io/powered-off-for-remediation"
+	requestPowerOffAnnotation       = "reboot.metal3.io/capbm-requested-power-off"
 )
 
 // Add RBAC rules to access cluster-api resources
@@ -438,177 +430,6 @@ func consumerRefMatches(consumer *corev1.ObjectReference, machine *machinev1.Mac
 	return true
 }
 
-// updateUserData fetches full ignition from MCS and updates the UserData secret reference
-func (a *Actuator) updateUserData(ctx context.Context, config *bmv1alpha1.BareMetalMachineProviderSpec,
-	machine *machinev1.Machine) error {
-
-	// Try to fetch the full ignition secret to see if it exists
-	machineUserDataSecret := &corev1.Secret{}
-	key := client.ObjectKey{
-		Name:      machine.Name + "-user-data",
-		Namespace: machine.Namespace,
-	}
-	// Check if the full ignition secret already exists. If not, create one
-	err := a.client.Get(ctx, key, machineUserDataSecret)
-	if err == nil {
-		return nil
-	}
-	if !errors.IsNotFound(err) {
-		log.Printf("Cannot get %s secret: %w", machineUserDataSecret.Name, err)
-		return fmt.Errorf("Cannot get %s secret: %w", machineUserDataSecret.Name, err)
-	}
-
-	// userDataSecret is the pointer ignition originally
-	// created by openshift installer. Fetch it to extract
-	// its content (an URL containg full ignition and a
-	// CA cert for the URL's https connection)
-	userDataSecret := corev1.Secret{}
-	key = client.ObjectKey{
-		Name:      config.UserData.Name,
-		Namespace: config.UserData.Namespace,
-	}
-	err = a.client.Get(ctx, key, &userDataSecret)
-	if err != nil {
-		log.Printf("Cannot get %s secret: %w", config.UserData.Name, err)
-		return fmt.Errorf("cannot get %s secret: %w", config.UserData.Name, err)
-	}
-	encodedUserDataBytes := userDataSecret.Data["userData"]
-	if len(encodedUserDataBytes) == 0 {
-		err := fmt.Errorf("could not fetch data from the key: 'userData' in the secret: %s", config.UserData.Name)
-		log.Printf(err.Error())
-		return err
-	}
-
-	var userData []byte
-	userData, err = base64.StdEncoding.DecodeString(string(encodedUserDataBytes))
-	if err != nil {
-		log.Printf("Error base64 decoding userData from %s: %s", config.UserData.Name, err.Error())
-		return fmt.Errorf("error base64 decoding userData from %s : %w", config.UserData.Name, err)
-	}
-
-	// Define an ignition data struct to unmarshal incoming json
-	type IgnitionData struct {
-		Ignition struct {
-			Config struct {
-				Append []struct {
-					Source string
-				}
-			}
-			Security struct {
-				TLS struct {
-					CertificateAuthorities []struct {
-						Source string
-					}
-				}
-			}
-		}
-	}
-	var ignData IgnitionData
-
-	if err := json.Unmarshal(userData, &ignData); err != nil {
-		log.Printf("Cannot unmarshal ignition config from userData : %s, %w", config.UserData.Name, err)
-		return fmt.Errorf("cannot unmarshal ignition config from userData : %s, %w", config.UserData.Name, err)
-	}
-
-	var ignitionURL, caCertRaw string
-	// Fetch IgnitionURL and the CA cert
-	if len(ignData.Ignition.Config.Append) > 0 && len(ignData.Ignition.Config.Append[0].Source) > 0 {
-		ignitionURL = ignData.Ignition.Config.Append[0].Source
-	} else {
-		// We didn't get any URL
-		err := fmt.Errorf("error extracting full Ignition URL from content of %s", config.UserData.Name)
-		log.Printf(err.Error())
-		return err
-	}
-
-	if len(ignData.Ignition.Security.TLS.CertificateAuthorities) > 0 && len(ignData.Ignition.Security.TLS.CertificateAuthorities[0].Source) > 0 {
-		caCertRaw = ignData.Ignition.Security.TLS.CertificateAuthorities[0].Source
-	} else {
-		// We didn't get the URL's Cert
-		err := fmt.Errorf("CA cert for full Ignition URL was not specified in %s", config.UserData.Name)
-		log.Printf(err.Error())
-		return err
-	}
-	caCertB64 := strings.TrimPrefix(caCertRaw, "data:text/plain;charset=utf-8;base64,")
-
-	caCert, err := base64.StdEncoding.DecodeString(caCertB64)
-	if err != nil {
-		log.Printf("Could not base64 decode caCert in %s: %s", config.UserData.Name, err.Error())
-		return fmt.Errorf("could not base64 decode caCert in %s: %w", config.UserData.Name, err)
-	}
-	caCertPool := x509.NewCertPool()
-	caCertPool.AppendCertsFromPEM(caCert)
-	client := retryablehttp.NewClient()
-	client.HTTPClient.Transport = &http.Transport{
-		TLSClientConfig: &tls.Config{
-			RootCAs: caCertPool,
-		},
-	}
-
-	// Get the full ignition from the URL
-	resp, err := client.Get(ignitionURL)
-	if err != nil {
-		log.Printf("Error fetching full ignition from %s : %s", ignitionURL, err.Error())
-		return fmt.Errorf("error fetching full ignition from %s: %w", ignitionURL, err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		log.Printf("Received HTTP status code: %d while fetching full ignition from %s", resp.StatusCode, ignitionURL)
-		return fmt.Errorf("received HTTP status code: %d while fetching full ignition from URL from %s", resp.StatusCode, ignitionURL)
-	}
-	defer resp.Body.Close()
-
-	var fullIgnition []byte
-	fullIgnition, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Printf("Error reading full ignition data from %s : %s", ignitionURL, err.Error())
-		return fmt.Errorf("error reading full ignition data from %s : %w", ignitionURL, err)
-	}
-
-	// Create a new secret with ignition data
-	machineUserDataSecret = createNewMachineSecret(fullIgnition, machine)
-	err = a.client.Create(ctx, machineUserDataSecret)
-	if err != nil {
-		log.Printf("Cannot create the %s secret: %s", machineUserDataSecret.Name, err.Error())
-		return fmt.Errorf("cannot create the %s secret: %w", machineUserDataSecret.Name, err)
-	}
-
-	// Set Machine's secretreference to the newly created secret
-	config.UserData = &corev1.SecretReference{
-		Name:      machine.Name + "-user-data",
-		Namespace: machine.Namespace,
-	}
-
-	return nil
-}
-
-// createNewSecret uses Full Ignition data and creates a '-user-data' suffixed secret per machine
-func createNewMachineSecret(data []byte, machine *machinev1.Machine) *corev1.Secret {
-	// Create a new Secret with Full Ignition
-	return &corev1.Secret{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Secret",
-			APIVersion: "v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      machine.Name + "-user-data",
-			Namespace: machine.Namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				metav1.OwnerReference{
-					Controller: pointer.BoolPtr(true),
-					Kind:       "Machine",
-					Name:       machine.Name,
-					APIVersion: machine.APIVersion,
-					UID:        machine.UID,
-				},
-			},
-		},
-		Data: map[string][]byte{
-			"userData": []byte(base64.URLEncoding.EncodeToString(data)),
-		},
-		Type: "Opaque",
-	}
-}
-
 // setHostSpec will ensure the host's Spec is set according to the machine's
 // details. It will then update the host via the kube API. If UserData does not
 // include a Namespace, it will default to the Machine's namespace.
@@ -625,11 +446,6 @@ func (a *Actuator) setHostSpec(ctx context.Context, host *bmh.BareMetalHost, mac
 		host.Spec.Image = &bmh.Image{
 			URL:      config.Image.URL,
 			Checksum: config.Image.Checksum,
-		}
-		// Fetch full ignition and update the UserData secret
-		err := a.updateUserData(ctx, config, machine)
-		if err != nil {
-			log.Printf("Could not update userData secret reference: %s", err)
 		}
 		host.Spec.UserData = config.UserData
 		if host.Spec.UserData != nil && host.Spec.UserData.Namespace == "" {
