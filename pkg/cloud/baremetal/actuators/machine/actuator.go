@@ -845,14 +845,14 @@ func (a *Actuator) remediateIfNeeded(ctx context.Context, machine *machinev1beta
 func (a *Actuator) storeAnnotationsAndLabels(ctx context.Context, node *corev1.Node, machine *machinev1.Machine) error {
 	marshaledAnnotations, err := marshal(node.Annotations)
 	if err != nil {
-		log.Printf("Failes to marshal node %s annotations assoicated with Machine %s: %s",
+		log.Printf("Failed to marshal node %s annotations associated with Machine %s: %s",
 			node.Name, machine.Name, err.Error())
 		return err
 	}
 
 	marshaledLabels, err := marshal(node.Labels)
 	if err != nil {
-		log.Printf("Failes to marshal node %s labels assoicated with Machine %s: %s",
+		log.Printf("Failed to marshal node %s labels associated with Machine %s: %s",
 			node.Name, machine.Name, err.Error())
 		return err
 	}
@@ -862,7 +862,7 @@ func (a *Actuator) storeAnnotationsAndLabels(ctx context.Context, node *corev1.N
 
 	err = a.client.Update(ctx, machine)
 	if err != nil {
-		log.Printf("failed to update machine with node's annotations and labels %s: %s", machine.Name, err.Error())
+		log.Printf("Failed to update machine with node's annotations and labels %s: %s", machine.Name, err.Error())
 		return err
 	}
 
