@@ -888,8 +888,8 @@ func (a *Actuator) restoreAnnotationsAndLabels(ctx context.Context, node *corev1
 		return err
 	}
 
-	node.Annotations = nodeAnn
-	node.Labels = nodeLabels
+	node.Annotations = a.mergeMaps(node.Annotations, nodeAnn)
+	node.Labels = a.mergeMaps(node.Labels, nodeLabels)
 
 	if err := a.client.Update(ctx, node); err != nil {
 		log.Printf("failed to update machine with node's annotations %s: %s", machine.Name, err.Error())
@@ -907,6 +907,24 @@ func (a *Actuator) restoreAnnotationsAndLabels(ctx context.Context, node *corev1
 	}
 
 	return &clustererror.RequeueAfterError{}
+}
+
+// mergeMaps takes entries from mapToMerge and adds them to prioritizedMap, if entry key not already
+// exists in prioritizedMap. It returns the merged map
+func (a *Actuator) mergeMaps(prioritizedMap map[string]string, mapToMerge map[string]string) map[string]string {
+	if prioritizedMap == nil {
+		prioritizedMap = make(map[string]string)
+	}
+
+	// restore from backup only if key not exists
+	for annKey, annValue := range mapToMerge {
+		_, exists := prioritizedMap[annKey]
+		if !exists {
+			prioritizedMap[annKey] = annValue
+		}
+	}
+
+	return prioritizedMap
 }
 
 // marshal is a wrapper for json.marshal() and converts its output to string
