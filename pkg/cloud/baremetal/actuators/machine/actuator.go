@@ -847,14 +847,14 @@ func (a *Actuator) storeAnnotationsAndLabels(ctx context.Context, node *corev1.N
 	if err != nil {
 		log.Printf("Failed to marshal node %s annotations associated with Machine %s: %s",
 			node.Name, machine.Name, err.Error())
-		return err
+		return nil
 	}
 
 	marshaledLabels, err := marshal(node.Labels)
 	if err != nil {
 		log.Printf("Failed to marshal node %s labels associated with Machine %s: %s",
 			node.Name, machine.Name, err.Error())
-		return err
+		return nil
 	}
 
 	machine.Annotations[nodeLabelsBackupAnnotation] = marshaledLabels
@@ -879,13 +879,13 @@ func (a *Actuator) restoreAnnotationsAndLabels(ctx context.Context, node *corev1
 	nodeAnn, err := unmarshal(machine.Annotations[nodeAnnotationsBackupAnnotation])
 	if err != nil {
 		log.Printf("failed to unmarshal node's annotations from %s: %s", machine.Name, err.Error())
-		return err
+		return nil
 	}
 
 	nodeLabels, err := unmarshal(machine.Annotations[nodeLabelsBackupAnnotation])
 	if err != nil {
 		log.Printf("failed to unmarshal node's labels from %s: %s", machine.Name, err.Error())
-		return err
+		return nil
 	}
 
 	node.Annotations = a.mergeMaps(node.Annotations, nodeAnn)
@@ -910,7 +910,7 @@ func (a *Actuator) restoreAnnotationsAndLabels(ctx context.Context, node *corev1
 }
 
 // mergeMaps takes entries from mapToMerge and adds them to prioritizedMap, if entry key not already
-// exists in prioritizedMap. It returns the merged map
+// exists in prioritizedMap. It returns the merged mapsssss
 func (a *Actuator) mergeMaps(prioritizedMap map[string]string, mapToMerge map[string]string) map[string]string {
 	if prioritizedMap == nil {
 		prioritizedMap = make(map[string]string)
