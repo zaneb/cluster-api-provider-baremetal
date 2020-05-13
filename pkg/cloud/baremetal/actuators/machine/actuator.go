@@ -51,6 +51,7 @@ const (
 	requestPowerOffAnnotation       = "reboot.metal3.io/capbm-requested-power-off"
 	nodeLabelsBackupAnnotation      = "remediation.metal3.io/nodeLabelsBackup"
 	nodeAnnotationsBackupAnnotation = "remediation.metal3.io/nodeAnnotationsBackup"
+	nodeFinalizer                   = "machine.openshift.io"
 )
 
 // Add RBAC rules to access cluster-api resources
@@ -136,6 +137,10 @@ func (a *Actuator) Create(ctx context.Context, machine *machinev1beta1.Machine) 
 
 	_, err = a.ensureAnnotation(ctx, machine, host)
 	if err != nil {
+		return err
+	}
+
+	if err := a.handleNodeFinalizer(ctx, machine); err != nil {
 		return err
 	}
 
@@ -252,6 +257,10 @@ func (a *Actuator) Update(ctx context.Context, machine *machinev1beta1.Machine) 
 
 	dirty, err := a.ensureAnnotation(ctx, machine, host)
 	if err != nil {
+		return err
+	}
+
+	if err := a.handleNodeFinalizer(ctx, machine); err != nil {
 		return err
 	}
 
@@ -487,6 +496,47 @@ func (a *Actuator) ensureAnnotation(ctx context.Context, machine *machinev1beta1
 	annotations[HostAnnotation] = hostKey
 	machine.ObjectMeta.SetAnnotations(annotations)
 	return true, a.client.Update(ctx, machine)
+}
+
+// handleNodeFinalizer adds finalizer to Node if not already exists
+// it also store the node annotations and labels on Machine annotations
+// upon node deletion
+func (a *Actuator) handleNodeFinalizer(ctx context.Context, machine *machinev1.Machine) error {
+	node, err := a.getNodeByMachine(ctx, machine)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+
+		log.Printf("Failed to find node assosicated with Machine %s, error: %s", machine.Name, err.Error())
+		return err
+	}
+
+	if node.DeletionTimestamp.IsZero() {
+		if !utils.StringInList(node.Finalizers, nodeFinalizer) {
+			//add finalizer
+			node.Finalizers = append(node.Finalizers, nodeFinalizer)
+			if err := a.client.Update(ctx, node); err != nil {
+				log.Printf("Failed to add node finalizer to node %s, error: %s", node.Name, err.Error())
+				return err
+			}
+		}
+	} else {
+		//node is in deletion process
+		if utils.StringInList(node.Finalizers, nodeFinalizer) {
+			if err := a.storeAnnotationsAndLabels(node, machine, ctx); err != nil {
+				return err
+			}
+
+			//remove finalizer
+			node.Finalizers = utils.FilterStringFromList(node.Finalizers, nodeFinalizer)
+			if err := a.client.Update(ctx, node); err != nil {
+				log.Printf("Failed to remove node finalizer from %s, error: %s", node.Name, err.Error())
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // setError sets the ErrorMessage and ErrorReason fields on the machine and logs
@@ -759,12 +809,6 @@ func (a *Actuator) remediateIfNeeded(ctx context.Context, machine *machinev1beta
 
 	if !baremetalhost.Status.PoweredOn {
 		if node != nil {
-			//we want to keep existing node's annotations and labels before we delete the node.
-			//we will restore them once the node is up again
-			if _, annotationsBackupExists := machine.Annotations[nodeAnnotationsBackupAnnotation]; !annotationsBackupExists {
-				return a.storeAnnotationsAndLabels(node, machine, ctx)
-			}
-
 			log.Printf("Deleting Node %s associated with Machine %s", node.Name, machine.Name)
 			/*
 				Delete the node only after the host is powered off. Otherwise, if we would delete the node
@@ -822,7 +866,7 @@ func (a *Actuator) storeAnnotationsAndLabels(node *corev1.Node, machine *machine
 		return err
 	}
 
-	return &clustererror.RequeueAfterError{}
+	return nil
 }
 
 // restoreAnnotationsAndLabels copies annotations and labels stored in machine's annotation to the node

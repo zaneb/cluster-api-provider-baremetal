@@ -11,7 +11,7 @@ import (
 )
 
 func TestMap(t *testing.T) {
-	m := mapper{}
+	m := bmhMapper{}
 
 	for _, tc := range []struct {
 		Host          *bmh.BareMetalHost
