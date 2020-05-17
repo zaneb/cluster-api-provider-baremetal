@@ -905,7 +905,7 @@ func (a *Actuator) restoreAnnotationsAndLabels(ctx context.Context, node *corev1
 		return err
 	}
 
-	return &clustererror.RequeueAfterError{}
+	return nil
 }
 
 // mergeMaps takes entries from mapToMerge and adds them to prioritizedMap, if entry key not already

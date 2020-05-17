@@ -1830,16 +1830,10 @@ func TestRemediation(t *testing.T) {
 
 	machine = &machinev1beta1.Machine{}
 	c.Get(context.TODO(), machineNamespacedName, machine)
+
 	err = actuator.Update(context.TODO(), machine)
-	if err == nil {
-		t.Errorf("expected a requeue err but err was nil")
-	} else {
-		switch err.(type) {
-		case *machineapierrors.RequeueAfterError:
-			break
-		default:
-			t.Errorf("unexpected error %v", err)
-		}
+	if err != nil {
+		t.Errorf("unexpected error %v", err)
 	}
 
 	node = &corev1.Node{}
