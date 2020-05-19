@@ -909,7 +909,7 @@ func (a *Actuator) restoreAnnotationsAndLabels(ctx context.Context, node *corev1
 }
 
 // mergeMaps takes entries from mapToMerge and adds them to prioritizedMap, if entry key not already
-// exists in prioritizedMap. It returns the merged mapsssss
+// exists in prioritizedMap. It returns the merged maps
 func (a *Actuator) mergeMaps(prioritizedMap map[string]string, mapToMerge map[string]string) map[string]string {
 	if prioritizedMap == nil {
 		prioritizedMap = make(map[string]string)
