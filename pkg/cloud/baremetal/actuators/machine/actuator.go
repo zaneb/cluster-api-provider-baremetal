@@ -846,25 +846,26 @@ func (a *Actuator) storeAnnotationsAndLabels(ctx context.Context, node *corev1.N
 	if err != nil {
 		log.Printf("Failed to marshal node %s annotations associated with Machine %s: %s",
 			node.Name, machine.Name, err.Error())
-		return nil
+		//if marsahl fails we want to continue without blocking on this, as this error
+		//not likely to be resolved in the next run
 	}
 
 	marshaledLabels, err := marshal(node.Labels)
 	if err != nil {
 		log.Printf("Failed to marshal node %s labels associated with Machine %s: %s",
 			node.Name, machine.Name, err.Error())
-		return nil
 	}
 
-	machine.Annotations[nodeLabelsBackupAnnotation] = marshaledLabels
-	machine.Annotations[nodeAnnotationsBackupAnnotation] = marshaledAnnotations
+	if len(marshaledAnnotations) > 0 || len(marshaledLabels) > 0 {
+		machine.Annotations[nodeLabelsBackupAnnotation] = marshaledLabels
+		machine.Annotations[nodeAnnotationsBackupAnnotation] = marshaledAnnotations
 
-	err = a.client.Update(ctx, machine)
-	if err != nil {
-		log.Printf("Failed to update machine with node's annotations and labels %s: %s", machine.Name, err.Error())
-		return err
+		err = a.client.Update(ctx, machine)
+		if err != nil {
+			log.Printf("Failed to update machine with node's annotations and labels %s: %s", machine.Name, err.Error())
+			return err
+		}
 	}
-
 	return nil
 }
 
@@ -878,21 +879,23 @@ func (a *Actuator) restoreAnnotationsAndLabels(ctx context.Context, node *corev1
 	nodeAnn, err := unmarshal(machine.Annotations[nodeAnnotationsBackupAnnotation])
 	if err != nil {
 		log.Printf("failed to unmarshal node's annotations from %s: %s", machine.Name, err.Error())
-		return nil
+		//if unmarsahl fails we want to continue without blocking on this, as this error
+		//not likely to be resolved in the next run
 	}
 
 	nodeLabels, err := unmarshal(machine.Annotations[nodeLabelsBackupAnnotation])
 	if err != nil {
 		log.Printf("failed to unmarshal node's labels from %s: %s", machine.Name, err.Error())
-		return nil
 	}
 
-	node.Annotations = a.mergeMaps(node.Annotations, nodeAnn)
-	node.Labels = a.mergeMaps(node.Labels, nodeLabels)
+	if len(nodeLabels) > 0 || len(nodeAnn) > 0 {
+		node.Annotations = a.mergeMaps(node.Annotations, nodeAnn)
+		node.Labels = a.mergeMaps(node.Labels, nodeLabels)
 
-	if err := a.client.Update(ctx, node); err != nil {
-		log.Printf("failed to update machine with node's annotations %s: %s", machine.Name, err.Error())
-		return err
+		if err := a.client.Update(ctx, node); err != nil {
+			log.Printf("failed to update machine with node's annotations %s: %s", machine.Name, err.Error())
+			return err
+		}
 	}
 
 	delete(machine.Annotations, nodeAnnotationsBackupAnnotation)
