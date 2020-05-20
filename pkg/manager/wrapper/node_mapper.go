@@ -4,6 +4,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
+	"log"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
@@ -23,6 +24,7 @@ func (m *nodeMapper) Map(obj handler.MapObject) []reconcile.Request {
 
 		namespace, machineName, err := cache.SplitMetaNamespaceKey(machineKey)
 		if err != nil {
+			log.Printf("Error mapping Node %s to Machine: %s", node.Name, err.Error())
 			return []reconcile.Request{}
 		}
 
