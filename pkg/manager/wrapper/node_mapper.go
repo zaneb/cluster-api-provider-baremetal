@@ -13,7 +13,7 @@ type nodeMapper struct{}
 const MachineAnnotation = "machine.openshift.io/machine"
 
 // Map will return a reconcile request for a Machine if the event is for a
-// BareMetalHost and that BareMetalHost references a Machine.
+// Node and that Node references a Machine.
 func (m *nodeMapper) Map(obj handler.MapObject) []reconcile.Request {
 	if node, ok := obj.Object.(*corev1.Node); ok {
 		machineKey, ok := node.Annotations[MachineAnnotation]
