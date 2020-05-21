@@ -930,17 +930,17 @@ func (a *Actuator) mergeMaps(prioritizedMap map[string]string, mapToMerge map[st
 }
 
 // marshal is a wrapper for json.marshal() and converts its output to string
-// if m is nil or empty an empty string will be returned
+// if m is nil - an empty string will be returned
 func marshal(m map[string]string) (string, error) {
-	var err error
-	var marshaled []byte
-
-	if len(m) > 0 {
-		marshaled, err = json.Marshal(m)
-		if err != nil {
-			return "", err
-		}
+	if m == nil {
+		return "", nil
 	}
+
+	marshaled, err := json.Marshal(m)
+	if err != nil {
+		return "", err
+	}
+
 	return string(marshaled), nil
 }
 

@@ -1660,6 +1660,10 @@ func TestMarshalAndUnmarshal(t *testing.T) {
 		t.Errorf("marshal() returned an err: %s", err.Error())
 	}
 
+	if marshaled != "" {
+		t.Errorf("Expected marshal(nil) to return an empty string, but recieved: %s ", marshaled)
+	}
+
 	unmarshaled, err = unmarshal(marshaled)
 
 	if err != nil {
@@ -1676,6 +1680,10 @@ func TestMarshalAndUnmarshal(t *testing.T) {
 
 	if err != nil {
 		t.Errorf("marshal() returned an err: %s", err.Error())
+	}
+
+	if marshaled != "{}" {
+		t.Errorf("Expected marshal() with empty map to return {} but got %s", marshaled)
 	}
 
 	unmarshaled, err = unmarshal(marshaled)
