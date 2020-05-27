@@ -5,8 +5,7 @@ IMG ?= controller:latest
 .PHONY: build
 build:
 	@mkdir -p bin
-	go build -o bin/machine-controller-manager ./cmd/manager
-	go build -o bin/manager ./vendor/github.com/openshift/cluster-api/cmd/manager
+	go build --mod=vendor -o bin/machine-controller-manager ./cmd/manager
 
 all: test manager
 
@@ -15,10 +14,6 @@ test: generate fmt vet unit
 
 unit: manifests
 	go test ./pkg/... ./cmd/... -coverprofile cover.out
-
-# Build manager binary
-manager: generate fmt vet
-	go build -o bin/manager github.com/openshift/cluster-api-provider-baremetal/cmd/manager
 
 # Run against the configured Kubernetes cluster in ~/.kube/config
 run: generate fmt vet
