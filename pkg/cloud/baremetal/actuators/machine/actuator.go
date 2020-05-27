@@ -27,10 +27,8 @@ import (
 	bmh "github.com/metal3-io/baremetal-operator/pkg/apis/metal3/v1alpha1"
 	"github.com/metal3-io/baremetal-operator/pkg/utils"
 	bmv1alpha1 "github.com/openshift/cluster-api-provider-baremetal/pkg/apis/baremetal/v1alpha1"
-	clusterv1 "github.com/openshift/cluster-api/pkg/apis/cluster/v1alpha1"
-	"github.com/openshift/cluster-api/pkg/apis/machine/common"
-	machinev1 "github.com/openshift/cluster-api/pkg/apis/machine/v1beta1"
-	clustererror "github.com/openshift/cluster-api/pkg/controller/error"
+	machinev1beta1 "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
+	machineapierrors "github.com/openshift/machine-api-operator/pkg/controller/machine"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -46,11 +44,11 @@ const (
 	ProviderName = "baremetal"
 	// HostAnnotation is the key for an annotation that should go on a Machine to
 	// reference what BareMetalHost it corresponds to.
-	HostAnnotation                  = "metal3.io/BareMetalHost"
-	requeueAfter                    = time.Second * 30
-	externalRemediationAnnotation   = "host.metal3.io/external-remediation"
-	poweredOffForRemediation        = "remediation.metal3.io/powered-off-for-remediation"
-	requestPowerOffAnnotation       = "reboot.metal3.io/capbm-requested-power-off"
+	HostAnnotation                = "metal3.io/BareMetalHost"
+	requeueAfter                  = time.Second * 30
+	externalRemediationAnnotation = "host.metal3.io/external-remediation"
+	poweredOffForRemediation      = "remediation.metal3.io/powered-off-for-remediation"
+	requestPowerOffAnnotation     = "reboot.metal3.io/capbm-requested-power-off"
 )
 
 // Add RBAC rules to access cluster-api resources
@@ -79,7 +77,7 @@ func NewActuator(params ActuatorParams) (*Actuator, error) {
 }
 
 // Create creates a machine and is invoked by the Machine Controller
-func (a *Actuator) Create(ctx context.Context, cluster *clusterv1.Cluster, machine *machinev1.Machine) error {
+func (a *Actuator) Create(ctx context.Context, machine *machinev1beta1.Machine) error {
 	log.Printf("Creating machine %v .", machine.Name)
 
 	// load and validate the config
@@ -116,7 +114,7 @@ func (a *Actuator) Create(ctx context.Context, cluster *clusterv1.Cluster, machi
 		}
 		if host == nil {
 			log.Printf("No available host found. Requeuing.")
-			return &clustererror.RequeueAfterError{RequeueAfter: requeueAfter}
+			return &machineapierrors.RequeueAfterError{RequeueAfter: requeueAfter}
 		}
 		log.Printf("Associating machine %s with host %s", machine.Name, host.Name)
 	} else {
@@ -125,8 +123,8 @@ func (a *Actuator) Create(ctx context.Context, cluster *clusterv1.Cluster, machi
 
 	// Add a finalizer for the BMH. This will allow us to delete
 	// the Machine when the BMH is deleted.
-	if !utils.StringInList(host.Finalizers, machinev1.MachineFinalizer) {
-		host.Finalizers = append(host.Finalizers, machinev1.MachineFinalizer)
+	if !utils.StringInList(host.Finalizers, machinev1beta1.MachineFinalizer) {
+		host.Finalizers = append(host.Finalizers, machinev1beta1.MachineFinalizer)
 	}
 
 	err = a.setHostSpec(ctx, host, machine, config)
@@ -148,7 +146,7 @@ func (a *Actuator) Create(ctx context.Context, cluster *clusterv1.Cluster, machi
 }
 
 // Delete deletes a machine and is invoked by the Machine Controller
-func (a *Actuator) Delete(ctx context.Context, cluster *clusterv1.Cluster, machine *machinev1.Machine) error {
+func (a *Actuator) Delete(ctx context.Context, machine *machinev1beta1.Machine) error {
 	log.Printf("Deleting machine %v .", machine.Name)
 	host, err := a.getHost(ctx, machine)
 	if err != nil {
@@ -169,7 +167,7 @@ func (a *Actuator) Delete(ctx context.Context, cluster *clusterv1.Cluster, machi
 			if err != nil && !errors.IsNotFound(err) {
 				return err
 			}
-			return &clustererror.RequeueAfterError{}
+			return &machineapierrors.RequeueAfterError{}
 		}
 
 		waiting := true
@@ -185,7 +183,7 @@ func (a *Actuator) Delete(ctx context.Context, cluster *clusterv1.Cluster, machi
 			waiting = host.Status.PoweredOn
 		}
 		if waiting {
-			return &clustererror.RequeueAfterError{RequeueAfter: requeueAfter}
+			return &machineapierrors.RequeueAfterError{RequeueAfter: requeueAfter}
 		} else {
 			host.Spec.ConsumerRef = nil
 			err = a.client.Update(ctx, host)
@@ -199,7 +197,7 @@ func (a *Actuator) Delete(ctx context.Context, cluster *clusterv1.Cluster, machi
 }
 
 // Update updates a machine and is invoked by the Machine Controller
-func (a *Actuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machine *machinev1.Machine) error {
+func (a *Actuator) Update(ctx context.Context, machine *machinev1beta1.Machine) error {
 	log.Printf("Updating machine %v .", machine.Name)
 
 	// clear any error message that was previously set. This method doesn't set
@@ -230,10 +228,10 @@ func (a *Actuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machi
 	// This is to ensure the MachineSet creates a new Machine
 	// containing the latest ProviderSpec.
 	if host.Status.Provisioning.State == bmh.StateDeleting {
-		if utils.StringInList(host.Finalizers, machinev1.MachineFinalizer) {
+		if utils.StringInList(host.Finalizers, machinev1beta1.MachineFinalizer) {
 			log.Print("Removing finalizer for host: ", host.Name)
 			host.Finalizers = utils.FilterStringFromList(
-				host.Finalizers, machinev1.MachineFinalizer)
+				host.Finalizers, machinev1beta1.MachineFinalizer)
 			err = a.client.Update(ctx, host)
 			if err != nil && !errors.IsNotFound(err) {
 				return err
@@ -270,7 +268,7 @@ func (a *Actuator) Update(ctx context.Context, cluster *clusterv1.Cluster, machi
 }
 
 // Exists tests for the existence of a machine and is invoked by the Machine Controller
-func (a *Actuator) Exists(ctx context.Context, cluster *clusterv1.Cluster, machine *machinev1.Machine) (bool, error) {
+func (a *Actuator) Exists(ctx context.Context, machine *machinev1beta1.Machine) (bool, error) {
 	log.Printf("Checking if machine %v exists.", machine.Name)
 	host, err := a.getHost(ctx, machine)
 	if err != nil {
@@ -289,13 +287,13 @@ func (a *Actuator) Exists(ctx context.Context, cluster *clusterv1.Cluster, machi
 // (https://github.com/kubernetes-sigs/cluster-api/issues/160).
 
 // GetIP returns IP address of the machine in the cluster.
-func (a *Actuator) GetIP(cluster *clusterv1.Cluster, machine *machinev1.Machine) (string, error) {
+func (a *Actuator) GetIP(machine *machinev1beta1.Machine) (string, error) {
 	log.Printf("Getting IP of machine %v .", machine.Name)
 	return "", fmt.Errorf("TODO: Not yet implemented")
 }
 
 // GetKubeConfig gets a kubeconfig from the running control plane.
-func (a *Actuator) GetKubeConfig(cluster *clusterv1.Cluster, controlPlaneMachine *machinev1.Machine) (string, error) {
+func (a *Actuator) GetKubeConfig(controlPlaneMachine *machinev1beta1.Machine) (string, error) {
 	log.Printf("Getting IP of machine %v .", controlPlaneMachine.Name)
 	return "", fmt.Errorf("TODO: Not yet implemented")
 }
@@ -303,7 +301,7 @@ func (a *Actuator) GetKubeConfig(cluster *clusterv1.Cluster, controlPlaneMachine
 // getHost gets the associated host by looking for an annotation on the machine
 // that contains a reference to the host. Returns nil if not found. Assumes the
 // host is in the same namespace as the machine.
-func (a *Actuator) getHost(ctx context.Context, machine *machinev1.Machine) (*bmh.BareMetalHost, error) {
+func (a *Actuator) getHost(ctx context.Context, machine *machinev1beta1.Machine) (*bmh.BareMetalHost, error) {
 	annotations := machine.ObjectMeta.GetAnnotations()
 	if annotations == nil {
 		return nil, nil
@@ -335,7 +333,7 @@ func (a *Actuator) getHost(ctx context.Context, machine *machinev1.Machine) (*bm
 
 // SelectorFromProviderSpec returns a selector that can be used to determine if
 // a BareMetalHost matches a Machine.
-func SelectorFromProviderSpec(providerspec *machinev1.ProviderSpec) (labels.Selector, error) {
+func SelectorFromProviderSpec(providerspec *machinev1beta1.ProviderSpec) (labels.Selector, error) {
 	config, err := configFromProviderSpec(*providerspec)
 	if err != nil {
 		log.Printf("Error reading ProviderSpec: %s", err.Error())
@@ -367,7 +365,7 @@ func SelectorFromProviderSpec(providerspec *machinev1.ProviderSpec) (labels.Sele
 // chooseHost iterates through known hosts and returns one that can be
 // associated with the machine. It searches all hosts in case one already has an
 // association with this machine.
-func (a *Actuator) chooseHost(ctx context.Context, machine *machinev1.Machine) (*bmh.BareMetalHost, error) {
+func (a *Actuator) chooseHost(ctx context.Context, machine *machinev1beta1.Machine) (*bmh.BareMetalHost, error) {
 	// get list of BMH
 	hosts := bmh.BareMetalHostList{}
 	opts := &client.ListOptions{
@@ -414,7 +412,7 @@ func (a *Actuator) chooseHost(ctx context.Context, machine *machinev1.Machine) (
 
 // consumerRefMatches returns a boolean based on whether the consumer
 // reference and machine metadata match
-func consumerRefMatches(consumer *corev1.ObjectReference, machine *machinev1.Machine) bool {
+func consumerRefMatches(consumer *corev1.ObjectReference, machine *machinev1beta1.Machine) bool {
 	if consumer.Name != machine.Name {
 		return false
 	}
@@ -433,7 +431,7 @@ func consumerRefMatches(consumer *corev1.ObjectReference, machine *machinev1.Mac
 // setHostSpec will ensure the host's Spec is set according to the machine's
 // details. It will then update the host via the kube API. If UserData does not
 // include a Namespace, it will default to the Machine's namespace.
-func (a *Actuator) setHostSpec(ctx context.Context, host *bmh.BareMetalHost, machine *machinev1.Machine,
+func (a *Actuator) setHostSpec(ctx context.Context, host *bmh.BareMetalHost, machine *machinev1beta1.Machine,
 	config *bmv1alpha1.BareMetalMachineProviderSpec) error {
 
 	// We only want to update the image setting if the host does not
@@ -467,7 +465,7 @@ func (a *Actuator) setHostSpec(ctx context.Context, host *bmh.BareMetalHost, mac
 // ensureAnnotation makes sure the machine has an annotation that references the
 // host and uses the API to update the machine if necessary.
 // it returns a boolean to indicate if the machine object was changed
-func (a *Actuator) ensureAnnotation(ctx context.Context, machine *machinev1.Machine, host *bmh.BareMetalHost) (bool, error) {
+func (a *Actuator) ensureAnnotation(ctx context.Context, machine *machinev1beta1.Machine, host *bmh.BareMetalHost) (bool, error) {
 	annotations := machine.ObjectMeta.GetAnnotations()
 	if annotations == nil {
 		annotations = make(map[string]string)
@@ -492,9 +490,9 @@ func (a *Actuator) ensureAnnotation(ctx context.Context, machine *machinev1.Mach
 // setError sets the ErrorMessage and ErrorReason fields on the machine and logs
 // the message. It assumes the reason is invalid configuration, since that is
 // currently the only relevant MachineStatusError choice.
-func (a *Actuator) setError(ctx context.Context, machine *machinev1.Machine, message string) error {
+func (a *Actuator) setError(ctx context.Context, machine *machinev1beta1.Machine, message string) error {
 	machine.Status.ErrorMessage = &message
-	reason := common.InvalidConfigurationMachineError
+	reason := machinev1beta1.InvalidConfigurationMachineError
 	machine.Status.ErrorReason = &reason
 	log.Printf("Machine %s: %s", machine.Name, message)
 	return a.client.Status().Update(ctx, machine)
@@ -503,7 +501,7 @@ func (a *Actuator) setError(ctx context.Context, machine *machinev1.Machine, mes
 // clearError removes the ErrorMessage from the machine's Status if set. Returns
 // nil if ErrorMessage was already nil. Returns a RequeueAfterError if the
 // machine was updated.
-func (a *Actuator) clearError(ctx context.Context, machine *machinev1.Machine) error {
+func (a *Actuator) clearError(ctx context.Context, machine *machinev1beta1.Machine) error {
 	if machine.Status.ErrorMessage != nil || machine.Status.ErrorReason != nil {
 		machine.Status.ErrorMessage = nil
 		machine.Status.ErrorReason = nil
@@ -512,14 +510,14 @@ func (a *Actuator) clearError(ctx context.Context, machine *machinev1.Machine) e
 			return err
 		}
 		log.Printf("Cleared error message from machine %s", machine.Name)
-		return &clustererror.RequeueAfterError{}
+		return &machineapierrors.RequeueAfterError{}
 	}
 	return nil
 }
 
 // configFromProviderSpec returns a BareMetalMachineProviderSpec by
 // deserializing the contents of a ProviderSpec
-func configFromProviderSpec(providerSpec machinev1.ProviderSpec) (*bmv1alpha1.BareMetalMachineProviderSpec, error) {
+func configFromProviderSpec(providerSpec machinev1beta1.ProviderSpec) (*bmv1alpha1.BareMetalMachineProviderSpec, error) {
 	if providerSpec.Value == nil {
 		return nil, fmt.Errorf("ProviderSpec missing")
 	}
@@ -534,7 +532,7 @@ func configFromProviderSpec(providerSpec machinev1.ProviderSpec) (*bmv1alpha1.Ba
 }
 
 // updateMachineStatus updates a machine object's status.
-func (a *Actuator) updateMachineStatus(ctx context.Context, machine *machinev1.Machine, host *bmh.BareMetalHost) error {
+func (a *Actuator) updateMachineStatus(ctx context.Context, machine *machinev1beta1.Machine, host *bmh.BareMetalHost) error {
 	addrs, err := a.nodeAddresses(host)
 	if err != nil {
 		return err
@@ -547,7 +545,7 @@ func (a *Actuator) updateMachineStatus(ctx context.Context, machine *machinev1.M
 	return nil
 }
 
-func (a *Actuator) applyMachineStatus(ctx context.Context, machine *machinev1.Machine, addrs []corev1.NodeAddress) error {
+func (a *Actuator) applyMachineStatus(ctx context.Context, machine *machinev1beta1.Machine, addrs []corev1.NodeAddress) error {
 	machineCopy := machine.DeepCopy()
 	machineCopy.Status.Addresses = addrs
 
@@ -596,7 +594,7 @@ func (a *Actuator) nodeAddresses(host *bmh.BareMetalHost) ([]corev1.NodeAddress,
 }
 
 //deleteRemediationAnnotations deletes poweredOffForRemediation and remediation strategy annotations
-func (a *Actuator) deleteRemediationAnnotations(ctx context.Context, machine *machinev1.Machine) error {
+func (a *Actuator) deleteRemediationAnnotations(ctx context.Context, machine *machinev1beta1.Machine) error {
 	if len(machine.Annotations) == 0 {
 		return nil
 	}
@@ -621,7 +619,7 @@ func hasPowerOffRequestAnnotation(baremetalhost *bmh.BareMetalHost) (exists bool
 }
 
 //addPoweredOffForRemediationAnnotation adds a powered-off-for-remediation annotation to the machine
-func (a *Actuator) addPoweredOffForRemediationAnnotation(ctx context.Context, machine *machinev1.Machine) error {
+func (a *Actuator) addPoweredOffForRemediationAnnotation(ctx context.Context, machine *machinev1beta1.Machine) error {
 	if machine.Annotations == nil {
 		machine.Annotations = make(map[string]string)
 	}
@@ -643,7 +641,7 @@ func (a *Actuator) requestPowerOff(ctx context.Context, baremetalhost *bmh.BareM
 	}
 
 	if _, powerOffRequestExists := baremetalhost.Annotations[requestPowerOffAnnotation]; powerOffRequestExists {
-		return &clustererror.RequeueAfterError{RequeueAfter: time.Second * 5}
+		return &machineapierrors.RequeueAfterError{RequeueAfter: time.Second * 5}
 	}
 
 	baremetalhost.Annotations[requestPowerOffAnnotation] = ""
@@ -663,7 +661,7 @@ func (a *Actuator) requestPowerOn(ctx context.Context, baremetalhost *bmh.BareMe
 	}
 
 	if _, powerOffRequestExists := baremetalhost.Annotations[requestPowerOffAnnotation]; !powerOffRequestExists {
-		return &clustererror.RequeueAfterError{RequeueAfter: time.Second * 5}
+		return &machineapierrors.RequeueAfterError{RequeueAfter: time.Second * 5}
 	}
 
 	delete(baremetalhost.Annotations, requestPowerOffAnnotation)
@@ -679,22 +677,22 @@ func (a *Actuator) requestPowerOn(ctx context.Context, baremetalhost *bmh.BareMe
 // deleteMachineNode deletes the node that mapped to specified machine
 func (a *Actuator) deleteNode(ctx context.Context, node *corev1.Node) error {
 	if !node.DeletionTimestamp.IsZero() {
-		return &clustererror.RequeueAfterError{RequeueAfter: time.Second * 2}
+		return &machineapierrors.RequeueAfterError{RequeueAfter: time.Second * 2}
 	}
 
 	err := a.client.Delete(ctx, node)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return &clustererror.RequeueAfterError{}
+			return &machineapierrors.RequeueAfterError{}
 		}
 		log.Printf("Failed to delete node %s: %s", node.Name, err.Error())
 		return err
 	}
-	return &clustererror.RequeueAfterError{RequeueAfter: time.Second * 2}
+	return &machineapierrors.RequeueAfterError{RequeueAfter: time.Second * 2}
 }
 
 // getNodeByMachine returns the node object referenced by machine
-func (a *Actuator) getNodeByMachine(ctx context.Context, machine *machinev1.Machine) (*corev1.Node, error) {
+func (a *Actuator) getNodeByMachine(ctx context.Context, machine *machinev1beta1.Machine) (*corev1.Node, error) {
 	if machine.Status.NodeRef == nil {
 		return nil, errors.NewNotFound(corev1.Resource("ObjectReference"), machine.Name)
 	}
@@ -721,7 +719,7 @@ The full remediation flow is:
 5) Wait for the node the come up (by waiting for the node to be registered in the cluster)
 6) Remove poweredOffForRemediation annotation and the MAO's machine unhealthy annotation
 */
-func (a *Actuator) remediateIfNeeded(ctx context.Context, machine *machinev1.Machine, baremetalhost *bmh.BareMetalHost) error {
+func (a *Actuator) remediateIfNeeded(ctx context.Context, machine *machinev1beta1.Machine, baremetalhost *bmh.BareMetalHost) error {
 	if len(machine.Annotations) == 0 {
 		return nil
 	}
@@ -776,7 +774,7 @@ func (a *Actuator) remediateIfNeeded(ctx context.Context, machine *machinev1.Mac
 
 	//node is still not running, so we requeue
 	if node == nil {
-		return &clustererror.RequeueAfterError{RequeueAfter: time.Second * 5}
+		return &machineapierrors.RequeueAfterError{RequeueAfter: time.Second * 5}
 	}
 
 	// node is now available again
