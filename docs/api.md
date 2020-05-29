@@ -3,8 +3,8 @@
 ## Machine
 
 The `Machine` resource is defined by the
-[cluster-api](https://github.com/kubernetes-sigs/cluster-api) project.  A
-`Machine` includes a `providerSpec` field which includes the data specific to
+[machine-api-operator](https://github.com/openshift/machine-api-operator) project.
+A `Machine` includes a `providerSpec` field which includes the data specific to
 this `cluster-api` provider.
 
 ## BareMetalMachineProviderSpec

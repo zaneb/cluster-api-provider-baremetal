@@ -2,22 +2,22 @@ package machine
 
 import (
 	"context"
-	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/yaml"
 	"testing"
 	"time"
+
 	bmoapis "github.com/metal3-io/baremetal-operator/pkg/apis"
 	bmh "github.com/metal3-io/baremetal-operator/pkg/apis/metal3/v1alpha1"
 	bmv1alpha1 "github.com/openshift/cluster-api-provider-baremetal/pkg/apis/baremetal/v1alpha1"
-	clusterapis "github.com/openshift/cluster-api/pkg/apis"
-	machinev1 "github.com/openshift/cluster-api/pkg/apis/machine/v1beta1"
-	clustererror "github.com/openshift/cluster-api/pkg/controller/error"
+	machinev1beta1 "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
+	machineapierrors "github.com/openshift/machine-api-operator/pkg/controller/machine"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	fakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/yaml"
 )
 
 const (
@@ -42,7 +42,7 @@ func TestChooseHost(t *testing.T) {
 				Name:       "someothermachine",
 				Namespace:  "myns",
 				Kind:       "Machine",
-				APIVersion: machinev1.SchemeGroupVersion.String(),
+				APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 			},
 		},
 	}
@@ -62,7 +62,7 @@ func TestChooseHost(t *testing.T) {
 				Name:       "machine1",
 				Namespace:  "myns",
 				Kind:       "Machine",
-				APIVersion: machinev1.SchemeGroupVersion.String(),
+				APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 			},
 		},
 	}
@@ -110,23 +110,23 @@ func TestChooseHost(t *testing.T) {
 		})
 
 	testCases := []struct {
-		Machine          machinev1.Machine
+		Machine          machinev1beta1.Machine
 		Hosts            []runtime.Object
 		ExpectedHostName string
 		Config           *bmv1alpha1.BareMetalMachineProviderSpec
 	}{
 		{
 			// should pick host2, which lacks a ConsumerRef
-			Machine: machinev1.Machine{
+			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "machine1",
 					Namespace: "myns",
 				},
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "Machine",
-					APIVersion: machinev1.SchemeGroupVersion.String(),
+					APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 				},
-				Spec: machinev1.MachineSpec{
+				Spec: machinev1beta1.MachineSpec{
 					ProviderSpec: providerSpec,
 				},
 			},
@@ -136,14 +136,14 @@ func TestChooseHost(t *testing.T) {
 		},
 		{
 			// should ignore discoveredHost and pick host2, which lacks a ConsumerRef
-			Machine: machinev1.Machine{
+			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "machine1",
 					Namespace: "myns",
 				},
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "Machine",
-					APIVersion: machinev1.SchemeGroupVersion.String(),
+					APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 				},
 			},
 			Hosts:            []runtime.Object{&discoveredHost, &host2, &host1},
@@ -152,16 +152,16 @@ func TestChooseHost(t *testing.T) {
 		},
 		{
 			// should pick host3, which already has a matching ConsumerRef
-			Machine: machinev1.Machine{
+			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "machine1",
 					Namespace: "myns",
 				},
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "Machine",
-					APIVersion: machinev1.SchemeGroupVersion.String(),
+					APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 				},
-				Spec: machinev1.MachineSpec{
+				Spec: machinev1beta1.MachineSpec{
 					ProviderSpec: providerSpec,
 				},
 			},
@@ -172,16 +172,16 @@ func TestChooseHost(t *testing.T) {
 		{
 			// should not pick a host, because two are already taken, and the third is in
 			// a different namespace
-			Machine: machinev1.Machine{
+			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "machine2",
 					Namespace: "myns",
 				},
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "Machine",
-					APIVersion: machinev1.SchemeGroupVersion.String(),
+					APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 				},
-				Spec: machinev1.MachineSpec{
+				Spec: machinev1beta1.MachineSpec{
 					ProviderSpec: providerSpec,
 				},
 			},
@@ -191,16 +191,16 @@ func TestChooseHost(t *testing.T) {
 		},
 		{
 			// Can choose hosts with a label, even without a label selector
-			Machine: machinev1.Machine{
+			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "machine1",
 					Namespace: "myns",
 				},
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "Machine",
-					APIVersion: machinev1.SchemeGroupVersion.String(),
+					APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 				},
-				Spec: machinev1.MachineSpec{
+				Spec: machinev1beta1.MachineSpec{
 					ProviderSpec: providerSpec,
 				},
 			},
@@ -210,16 +210,16 @@ func TestChooseHost(t *testing.T) {
 		},
 		{
 			// Choose the host with the right label
-			Machine: machinev1.Machine{
+			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "machine1",
 					Namespace: "myns",
 				},
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "Machine",
-					APIVersion: machinev1.SchemeGroupVersion.String(),
+					APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 				},
-				Spec: machinev1.MachineSpec{
+				Spec: machinev1beta1.MachineSpec{
 					ProviderSpec: providerSpec2,
 				},
 			},
@@ -229,16 +229,16 @@ func TestChooseHost(t *testing.T) {
 		},
 		{
 			// No host that matches required label
-			Machine: machinev1.Machine{
+			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "machine1",
 					Namespace: "myns",
 				},
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "Machine",
-					APIVersion: machinev1.SchemeGroupVersion.String(),
+					APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 				},
-				Spec: machinev1.MachineSpec{
+				Spec: machinev1beta1.MachineSpec{
 					ProviderSpec: providerSpec3,
 				},
 			},
@@ -248,16 +248,16 @@ func TestChooseHost(t *testing.T) {
 		},
 		{
 			// Host that matches a matchExpression
-			Machine: machinev1.Machine{
+			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "machine1",
 					Namespace: "myns",
 				},
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "Machine",
-					APIVersion: machinev1.SchemeGroupVersion.String(),
+					APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 				},
-				Spec: machinev1.MachineSpec{
+				Spec: machinev1beta1.MachineSpec{
 					ProviderSpec: providerSpec4,
 				},
 			},
@@ -267,16 +267,16 @@ func TestChooseHost(t *testing.T) {
 		},
 		{
 			// No Host available that matches a matchExpression
-			Machine: machinev1.Machine{
+			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "machine1",
 					Namespace: "myns",
 				},
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "Machine",
-					APIVersion: machinev1.SchemeGroupVersion.String(),
+					APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 				},
-				Spec: machinev1.MachineSpec{
+				Spec: machinev1beta1.MachineSpec{
 					ProviderSpec: providerSpec4,
 				},
 			},
@@ -286,16 +286,16 @@ func TestChooseHost(t *testing.T) {
 		},
 		{
 			// No host chosen given an Invalid match expression
-			Machine: machinev1.Machine{
+			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "machine1",
 					Namespace: "myns",
 				},
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "Machine",
-					APIVersion: machinev1.SchemeGroupVersion.String(),
+					APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 				},
-				Spec: machinev1.MachineSpec{
+				Spec: machinev1beta1.MachineSpec{
 					ProviderSpec: providerSpec5,
 				},
 			},
@@ -319,7 +319,7 @@ func TestChooseHost(t *testing.T) {
 			t.Logf("could not marshal BareMetalMachineProviderSpec: %v", err)
 			t.FailNow()
 		}
-		tc.Machine.Spec.ProviderSpec = machinev1.ProviderSpec{Value: &runtime.RawExtension{Raw: pspec}}
+		tc.Machine.Spec.ProviderSpec = machinev1beta1.ProviderSpec{Value: &runtime.RawExtension{Raw: pspec}}
 		result, err := actuator.chooseHost(context.TODO(), &tc.Machine)
 		if tc.ExpectedHostName == "" {
 			if result != nil {
@@ -394,7 +394,7 @@ func TestSetHostSpec(t *testing.T) {
 						Name:       "machine1",
 						Namespace:  "myns",
 						Kind:       "Machine",
-						APIVersion: machinev1.SchemeGroupVersion.String(),
+						APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 					},
 				},
 			},
@@ -419,7 +419,7 @@ func TestSetHostSpec(t *testing.T) {
 						Name:       "machine1",
 						Namespace:  "myns",
 						Kind:       "Machine",
-						APIVersion: machinev1.SchemeGroupVersion.String(),
+						APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 					},
 					Image: &bmh.Image{
 						URL:      testImageURL + "test",
@@ -438,12 +438,12 @@ func TestSetHostSpec(t *testing.T) {
 		t.Run(tc.Scenario, func(t *testing.T) {
 			// test data
 			config, providerSpec := newConfig(t, tc.UserDataNamespace, map[string]string{}, []bmv1alpha1.HostSelectorRequirement{})
-			machine := machinev1.Machine{
+			machine := machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "machine1",
 					Namespace: "myns",
 				},
-				Spec: machinev1.MachineSpec{
+				Spec: machinev1beta1.MachineSpec{
 					ProviderSpec: providerSpec,
 				},
 			}
@@ -538,13 +538,13 @@ func TestExists(t *testing.T) {
 
 	testCases := []struct {
 		Client      client.Client
-		Machine     machinev1.Machine
+		Machine     machinev1beta1.Machine
 		Expected    bool
 		FailMessage string
 	}{
 		{
 			Client: c,
-			Machine: machinev1.Machine{
+			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						HostAnnotation: "myns/somehost",
@@ -556,7 +556,7 @@ func TestExists(t *testing.T) {
 		},
 		{
 			Client: c,
-			Machine: machinev1.Machine{
+			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						HostAnnotation: "myns/wrong",
@@ -568,7 +568,7 @@ func TestExists(t *testing.T) {
 		},
 		{
 			Client:      c,
-			Machine:     machinev1.Machine{},
+			Machine:     machinev1beta1.Machine{},
 			Expected:    false,
 			FailMessage: "found host even though annotation not present",
 		},
@@ -582,7 +582,7 @@ func TestExists(t *testing.T) {
 			t.Error(err)
 		}
 
-		result, err := actuator.Exists(context.TODO(), nil, &tc.Machine)
+		result, err := actuator.Exists(context.TODO(), &tc.Machine)
 		if err != nil {
 			t.Error(err)
 		}
@@ -605,13 +605,13 @@ func TestGetHost(t *testing.T) {
 
 	testCases := []struct {
 		Client        client.Client
-		Machine       machinev1.Machine
+		Machine       machinev1beta1.Machine
 		ExpectPresent bool
 		FailMessage   string
 	}{
 		{
 			Client: c,
-			Machine: machinev1.Machine{
+			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						HostAnnotation: "myns/myhost",
@@ -623,7 +623,7 @@ func TestGetHost(t *testing.T) {
 		},
 		{
 			Client: c,
-			Machine: machinev1.Machine{
+			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						HostAnnotation: "myns/wrong",
@@ -635,7 +635,7 @@ func TestGetHost(t *testing.T) {
 		},
 		{
 			Client:        c,
-			Machine:       machinev1.Machine{},
+			Machine:       machinev1beta1.Machine{},
 			ExpectPresent: false,
 			FailMessage:   "found host even though annotation not present",
 		},
@@ -661,15 +661,15 @@ func TestGetHost(t *testing.T) {
 
 func TestEnsureAnnotation(t *testing.T) {
 	scheme := runtime.NewScheme()
-	clusterapis.AddToScheme(scheme)
+	machinev1beta1.AddToScheme(scheme)
 
 	testCases := []struct {
-		Machine machinev1.Machine
+		Machine machinev1beta1.Machine
 		Host    bmh.BareMetalHost
 	}{
 		{
 			// annotation exists and is correct
-			Machine: machinev1.Machine{
+			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						HostAnnotation: "myns/myhost",
@@ -685,7 +685,7 @@ func TestEnsureAnnotation(t *testing.T) {
 		},
 		{
 			// annotation exists but is wrong
-			Machine: machinev1.Machine{
+			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						HostAnnotation: "myns/wrongvalue",
@@ -701,7 +701,7 @@ func TestEnsureAnnotation(t *testing.T) {
 		},
 		{
 			// annotations are empty
-			Machine: machinev1.Machine{
+			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{},
 				},
@@ -715,7 +715,7 @@ func TestEnsureAnnotation(t *testing.T) {
 		},
 		{
 			// annotations are nil
-			Machine: machinev1.Machine{},
+			Machine: machinev1beta1.Machine{},
 			Host: bmh.BareMetalHost{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "myhost",
@@ -740,7 +740,7 @@ func TestEnsureAnnotation(t *testing.T) {
 		}
 
 		// get the machine and make sure it has the correct annotation
-		machine := machinev1.Machine{}
+		machine := machinev1beta1.Machine{}
 		key := client.ObjectKey{
 			Name:      tc.Machine.Name,
 			Namespace: tc.Machine.Namespace,
@@ -767,7 +767,7 @@ func TestDelete(t *testing.T) {
 	testCases := []struct {
 		CaseName            string
 		Host                *bmh.BareMetalHost
-		Machine             machinev1.Machine
+		Machine             machinev1beta1.Machine
 		ExpectedConsumerRef *corev1.ObjectReference
 		ExpectedResult      error
 	}{
@@ -783,7 +783,7 @@ func TestDelete(t *testing.T) {
 						Name:       "mymachine",
 						Namespace:  "myns",
 						Kind:       "Machine",
-						APIVersion: machinev1.SchemeGroupVersion.String(),
+						APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 					},
 					Image: &bmh.Image{
 						URL: "myimage",
@@ -795,10 +795,10 @@ func TestDelete(t *testing.T) {
 					},
 				},
 			},
-			Machine: machinev1.Machine{
+			Machine: machinev1beta1.Machine{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "Machine",
-					APIVersion: machinev1.SchemeGroupVersion.String(),
+					APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "mymachine",
@@ -812,9 +812,9 @@ func TestDelete(t *testing.T) {
 				Name:       "mymachine",
 				Namespace:  "myns",
 				Kind:       "Machine",
-				APIVersion: machinev1.SchemeGroupVersion.String(),
+				APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 			},
-			ExpectedResult: &clustererror.RequeueAfterError{},
+			ExpectedResult: &machineapierrors.RequeueAfterError{},
 		},
 		{
 			CaseName: "deprovisioning in progress",
@@ -828,7 +828,7 @@ func TestDelete(t *testing.T) {
 						Name:       "mymachine",
 						Namespace:  "myns",
 						Kind:       "Machine",
-						APIVersion: machinev1.SchemeGroupVersion.String(),
+						APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 					},
 				},
 				Status: bmh.BareMetalHostStatus{
@@ -837,10 +837,10 @@ func TestDelete(t *testing.T) {
 					},
 				},
 			},
-			Machine: machinev1.Machine{
+			Machine: machinev1beta1.Machine{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "Machine",
-					APIVersion: machinev1.SchemeGroupVersion.String(),
+					APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "mymachine",
@@ -854,9 +854,9 @@ func TestDelete(t *testing.T) {
 				Name:       "mymachine",
 				Namespace:  "myns",
 				Kind:       "Machine",
-				APIVersion: machinev1.SchemeGroupVersion.String(),
+				APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 			},
-			ExpectedResult: &clustererror.RequeueAfterError{RequeueAfter: time.Second * 30},
+			ExpectedResult: &machineapierrors.RequeueAfterError{RequeueAfter: time.Second * 30},
 		},
 		{
 			CaseName: "externally provisioned host should be powered down",
@@ -870,7 +870,7 @@ func TestDelete(t *testing.T) {
 						Name:       "mymachine",
 						Namespace:  "myns",
 						Kind:       "Machine",
-						APIVersion: machinev1.SchemeGroupVersion.String(),
+						APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 					},
 				},
 				Status: bmh.BareMetalHostStatus{
@@ -880,10 +880,10 @@ func TestDelete(t *testing.T) {
 					PoweredOn: true,
 				},
 			},
-			Machine: machinev1.Machine{
+			Machine: machinev1beta1.Machine{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "Machine",
-					APIVersion: machinev1.SchemeGroupVersion.String(),
+					APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "mymachine",
@@ -897,9 +897,9 @@ func TestDelete(t *testing.T) {
 				Name:       "mymachine",
 				Namespace:  "myns",
 				Kind:       "Machine",
-				APIVersion: machinev1.SchemeGroupVersion.String(),
+				APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 			},
-			ExpectedResult: &clustererror.RequeueAfterError{RequeueAfter: time.Second * 30},
+			ExpectedResult: &machineapierrors.RequeueAfterError{RequeueAfter: time.Second * 30},
 		},
 		{
 			CaseName: "consumer ref should be removed from externally provisioned host",
@@ -913,7 +913,7 @@ func TestDelete(t *testing.T) {
 						Name:       "mymachine",
 						Namespace:  "myns",
 						Kind:       "Machine",
-						APIVersion: machinev1.SchemeGroupVersion.String(),
+						APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 					},
 				},
 				Status: bmh.BareMetalHostStatus{
@@ -923,10 +923,10 @@ func TestDelete(t *testing.T) {
 					PoweredOn: false,
 				},
 			},
-			Machine: machinev1.Machine{
+			Machine: machinev1beta1.Machine{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "Machine",
-					APIVersion: machinev1.SchemeGroupVersion.String(),
+					APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "mymachine",
@@ -949,7 +949,7 @@ func TestDelete(t *testing.T) {
 						Name:       "mymachine",
 						Namespace:  "myns",
 						Kind:       "Machine",
-						APIVersion: machinev1.SchemeGroupVersion.String(),
+						APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 					},
 				},
 				Status: bmh.BareMetalHostStatus{
@@ -958,10 +958,10 @@ func TestDelete(t *testing.T) {
 					},
 				},
 			},
-			Machine: machinev1.Machine{
+			Machine: machinev1beta1.Machine{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "Machine",
-					APIVersion: machinev1.SchemeGroupVersion.String(),
+					APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "mymachine",
@@ -984,7 +984,7 @@ func TestDelete(t *testing.T) {
 						Name:       "someoneelsesmachine",
 						Namespace:  "myns",
 						Kind:       "Machine",
-						APIVersion: machinev1.SchemeGroupVersion.String(),
+						APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 					},
 					Image: &bmh.Image{
 						URL: "someoneelsesimage",
@@ -996,10 +996,10 @@ func TestDelete(t *testing.T) {
 					},
 				},
 			},
-			Machine: machinev1.Machine{
+			Machine: machinev1beta1.Machine{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "Machine",
-					APIVersion: machinev1.SchemeGroupVersion.String(),
+					APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "mymachine",
@@ -1013,7 +1013,7 @@ func TestDelete(t *testing.T) {
 				Name:       "someoneelsesmachine",
 				Namespace:  "myns",
 				Kind:       "Machine",
-				APIVersion: machinev1.SchemeGroupVersion.String(),
+				APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 			},
 		},
 		{
@@ -1024,10 +1024,10 @@ func TestDelete(t *testing.T) {
 					Namespace: "myns",
 				},
 			},
-			Machine: machinev1.Machine{
+			Machine: machinev1beta1.Machine{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "Machine",
-					APIVersion: machinev1.SchemeGroupVersion.String(),
+					APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "mymachine",
@@ -1041,10 +1041,10 @@ func TestDelete(t *testing.T) {
 		{
 			CaseName: "no host at all, so this is a no-op",
 			Host:     nil,
-			Machine: machinev1.Machine{
+			Machine: machinev1beta1.Machine{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "Machine",
-					APIVersion: machinev1.SchemeGroupVersion.String(),
+					APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "mymachine",
@@ -1069,15 +1069,15 @@ func TestDelete(t *testing.T) {
 			t.Error(err)
 		}
 
-		err = actuator.Delete(context.TODO(), nil, &tc.Machine)
+		err = actuator.Delete(context.TODO(), &tc.Machine)
 
 		var expectedResult bool
 		switch e := tc.ExpectedResult.(type) {
 		case nil:
 			expectedResult = (err == nil)
-		case *clustererror.RequeueAfterError:
-			var perr *clustererror.RequeueAfterError
-			if perr, expectedResult = err.(*clustererror.RequeueAfterError); expectedResult {
+		case *machineapierrors.RequeueAfterError:
+			var perr *machineapierrors.RequeueAfterError
+			if perr, expectedResult = err.(*machineapierrors.RequeueAfterError); expectedResult {
 				expectedResult = (*e == *perr)
 			}
 		}
@@ -1109,7 +1109,7 @@ func TestDelete(t *testing.T) {
 }
 
 func TestConfigFromProviderSpec(t *testing.T) {
-	ps := machinev1.ProviderSpec{
+	ps := machinev1beta1.ProviderSpec{
 		Value: &runtime.RawExtension{
 			Raw: []byte(`{"apiVersion":"baremetal.cluster.k8s.io/v1alpha1","userData":{"Name":"worker-user-data","Namespace":"myns"},"image":{"Checksum":"http://172.22.0.1/images/rhcos-ootpa-latest.qcow2.md5sum","URL":"http://172.22.0.1/images/rhcos-ootpa-latest.qcow2"},"kind":"BareMetalMachineProviderSpec"}`),
 		},
@@ -1142,7 +1142,7 @@ func TestConfigFromProviderSpec(t *testing.T) {
 	}
 }
 
-func newConfig(t *testing.T, UserDataNamespace string, labels map[string]string, reqs []bmv1alpha1.HostSelectorRequirement) (*bmv1alpha1.BareMetalMachineProviderSpec, machinev1.ProviderSpec) {
+func newConfig(t *testing.T, UserDataNamespace string, labels map[string]string, reqs []bmv1alpha1.HostSelectorRequirement) (*bmv1alpha1.BareMetalMachineProviderSpec, machinev1beta1.ProviderSpec) {
 	config := bmv1alpha1.BareMetalMachineProviderSpec{
 		Image: bmv1alpha1.Image{
 			URL:      testImageURL,
@@ -1162,14 +1162,14 @@ func newConfig(t *testing.T, UserDataNamespace string, labels map[string]string,
 		t.Logf("could not marshal BareMetalMachineProviderSpec: %v", err)
 		t.FailNow()
 	}
-	return &config, machinev1.ProviderSpec{
+	return &config, machinev1beta1.ProviderSpec{
 		Value: &runtime.RawExtension{Raw: out},
 	}
 }
 
 func TestUpdateMachineStatus(t *testing.T) {
 	scheme := runtime.NewScheme()
-	clusterapis.AddToScheme(scheme)
+	machinev1beta1.AddToScheme(scheme)
 
 	nic1 := bmh.NIC{
 		IP: "192.168.1.1",
@@ -1181,8 +1181,8 @@ func TestUpdateMachineStatus(t *testing.T) {
 
 	testCases := []struct {
 		Host            *bmh.BareMetalHost
-		Machine         *machinev1.Machine
-		ExpectedMachine machinev1.Machine
+		Machine         *machinev1beta1.Machine
+		ExpectedMachine machinev1beta1.Machine
 	}{
 		{
 			// machine status updated
@@ -1193,15 +1193,15 @@ func TestUpdateMachineStatus(t *testing.T) {
 					},
 				},
 			},
-			Machine: &machinev1.Machine{
+			Machine: &machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "mymachine",
 					Namespace: "myns",
 				},
-				Status: machinev1.MachineStatus{},
+				Status: machinev1beta1.MachineStatus{},
 			},
-			ExpectedMachine: machinev1.Machine{
-				Status: machinev1.MachineStatus{
+			ExpectedMachine: machinev1beta1.Machine{
+				Status: machinev1beta1.MachineStatus{
 					Addresses: []corev1.NodeAddress{
 						corev1.NodeAddress{
 							Address: "192.168.1.1",
@@ -1224,12 +1224,12 @@ func TestUpdateMachineStatus(t *testing.T) {
 					},
 				},
 			},
-			Machine: &machinev1.Machine{
+			Machine: &machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "mymachine",
 					Namespace: "myns",
 				},
-				Status: machinev1.MachineStatus{
+				Status: machinev1beta1.MachineStatus{
 					Addresses: []corev1.NodeAddress{
 						corev1.NodeAddress{
 							Address: "192.168.1.1",
@@ -1242,8 +1242,8 @@ func TestUpdateMachineStatus(t *testing.T) {
 					},
 				},
 			},
-			ExpectedMachine: machinev1.Machine{
-				Status: machinev1.MachineStatus{
+			ExpectedMachine: machinev1beta1.Machine{
+				Status: machinev1beta1.MachineStatus{
 					Addresses: []corev1.NodeAddress{
 						corev1.NodeAddress{
 							Address: "192.168.1.1",
@@ -1260,15 +1260,15 @@ func TestUpdateMachineStatus(t *testing.T) {
 		{
 			// machine status unchanged
 			Host: &bmh.BareMetalHost{},
-			Machine: &machinev1.Machine{
+			Machine: &machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "mymachine",
 					Namespace: "myns",
 				},
-				Status: machinev1.MachineStatus{},
+				Status: machinev1beta1.MachineStatus{},
 			},
-			ExpectedMachine: machinev1.Machine{
-				Status: machinev1.MachineStatus{},
+			ExpectedMachine: machinev1beta1.Machine{
+				Status: machinev1beta1.MachineStatus{},
 			},
 		},
 	}
@@ -1293,7 +1293,7 @@ func TestUpdateMachineStatus(t *testing.T) {
 			Name:      tc.Machine.Name,
 			Namespace: tc.Machine.Namespace,
 		}
-		machine := machinev1.Machine{}
+		machine := machinev1beta1.Machine{}
 		c.Get(context.TODO(), key, &machine)
 
 		if &tc.Machine != nil {
@@ -1301,7 +1301,7 @@ func TestUpdateMachineStatus(t *testing.T) {
 				Name:      tc.Machine.Name,
 				Namespace: tc.Machine.Namespace,
 			}
-			machine := machinev1.Machine{}
+			machine := machinev1beta1.Machine{}
 			c.Get(context.TODO(), key, &machine)
 
 			if tc.Machine.Status.Addresses != nil {
@@ -1317,7 +1317,7 @@ func TestUpdateMachineStatus(t *testing.T) {
 
 func TestApplyMachineStatus(t *testing.T) {
 	scheme := runtime.NewScheme()
-	clusterapis.AddToScheme(scheme)
+	machinev1beta1.AddToScheme(scheme)
 
 	addr1 := corev1.NodeAddress{
 		Type:    "InternalIP",
@@ -1330,18 +1330,18 @@ func TestApplyMachineStatus(t *testing.T) {
 	}
 
 	testCases := []struct {
-		Machine               *machinev1.Machine
+		Machine               *machinev1beta1.Machine
 		Addresses             []corev1.NodeAddress
 		ExpectedNodeAddresses []corev1.NodeAddress
 	}{
 		{
 			// Machine status updated
-			Machine: &machinev1.Machine{
+			Machine: &machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "machine1",
 					Namespace: "myns",
 				},
-				Status: machinev1.MachineStatus{
+				Status: machinev1beta1.MachineStatus{
 					Addresses: []corev1.NodeAddress{},
 				},
 			},
@@ -1350,12 +1350,12 @@ func TestApplyMachineStatus(t *testing.T) {
 		},
 		{
 			// Machine status unchanged
-			Machine: &machinev1.Machine{
+			Machine: &machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "machine1",
 					Namespace: "myns",
 				},
-				Status: machinev1.MachineStatus{
+				Status: machinev1beta1.MachineStatus{
 					Addresses: []corev1.NodeAddress{addr1, addr2},
 				},
 			},
@@ -1385,7 +1385,7 @@ func TestApplyMachineStatus(t *testing.T) {
 			Name:      tc.Machine.Name,
 			Namespace: tc.Machine.Namespace,
 		}
-		machine := machinev1.Machine{}
+		machine := machinev1beta1.Machine{}
 		c.Get(context.TODO(), key, &machine)
 
 		if tc.Machine.Status.Addresses != nil {
@@ -1400,7 +1400,7 @@ func TestApplyMachineStatus(t *testing.T) {
 
 func TestNodeAddresses(t *testing.T) {
 	scheme := runtime.NewScheme()
-	clusterapis.AddToScheme(scheme)
+	machinev1beta1.AddToScheme(scheme)
 
 	nic1 := bmh.NIC{
 		IP: "192.168.1.1",
@@ -1508,13 +1508,13 @@ func TestNodeAddresses(t *testing.T) {
 
 func TestDeleteOfBareMetalHostDeletesMachine(t *testing.T) {
 	scheme := runtime.NewScheme()
-	clusterapis.AddToScheme(scheme)
+	machinev1beta1.AddToScheme(scheme)
 	bmoapis.AddToScheme(scheme)
 
 	testCases := []struct {
 		CaseName              string
 		Host                  *bmh.BareMetalHost
-		Machine               *machinev1.Machine
+		Machine               *machinev1beta1.Machine
 		ExpectedMachineExists bool
 	}{
 		{
@@ -1529,7 +1529,7 @@ func TestDeleteOfBareMetalHostDeletesMachine(t *testing.T) {
 						Name:       "mymachine1",
 						Namespace:  "myns",
 						Kind:       "Machine",
-						APIVersion: machinev1.SchemeGroupVersion.String(),
+						APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 					},
 				},
 				Status: bmh.BareMetalHostStatus{
@@ -1539,7 +1539,7 @@ func TestDeleteOfBareMetalHostDeletesMachine(t *testing.T) {
 					},
 				},
 			},
-			Machine: &machinev1.Machine{
+			Machine: &machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "mymachine1",
 					Namespace: "myns",
@@ -1547,7 +1547,7 @@ func TestDeleteOfBareMetalHostDeletesMachine(t *testing.T) {
 						HostAnnotation: "myns/myhost1",
 					},
 				},
-				Status: machinev1.MachineStatus{},
+				Status: machinev1beta1.MachineStatus{},
 			},
 			ExpectedMachineExists: true,
 		},
@@ -1563,7 +1563,7 @@ func TestDeleteOfBareMetalHostDeletesMachine(t *testing.T) {
 						Name:       "mymachine2",
 						Namespace:  "myns",
 						Kind:       "Machine",
-						APIVersion: machinev1.SchemeGroupVersion.String(),
+						APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 					},
 				},
 				Status: bmh.BareMetalHostStatus{
@@ -1573,7 +1573,7 @@ func TestDeleteOfBareMetalHostDeletesMachine(t *testing.T) {
 					},
 				},
 			},
-			Machine: &machinev1.Machine{
+			Machine: &machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "mymachine2",
 					Namespace: "myns",
@@ -1581,7 +1581,7 @@ func TestDeleteOfBareMetalHostDeletesMachine(t *testing.T) {
 						HostAnnotation: "myns/myhost2",
 					},
 				},
-				Status: machinev1.MachineStatus{},
+				Status: machinev1beta1.MachineStatus{},
 			},
 			ExpectedMachineExists: false,
 		},
@@ -1602,7 +1602,7 @@ func TestDeleteOfBareMetalHostDeletesMachine(t *testing.T) {
 			t.Error(err)
 		}
 
-		err = actuator.Update(context.TODO(), nil, tc.Machine)
+		err = actuator.Update(context.TODO(), tc.Machine)
 		if err != nil {
 			t.Errorf("unexpected error %v", err)
 		}
@@ -1612,7 +1612,7 @@ func TestDeleteOfBareMetalHostDeletesMachine(t *testing.T) {
 				Name:      tc.Machine.Name,
 				Namespace: tc.Machine.Namespace,
 			}
-			machine := machinev1.Machine{}
+			machine := machinev1beta1.Machine{}
 
 			err = c.Get(context.TODO(), key, &machine)
 			if tc.ExpectedMachineExists == false {
@@ -1620,7 +1620,7 @@ func TestDeleteOfBareMetalHostDeletesMachine(t *testing.T) {
 					t.Errorf("Expected machine to not exist but received error: %v", err)
 				}
 			} else {
-				result, err := actuator.Exists(context.TODO(), nil, tc.Machine)
+				result, err := actuator.Exists(context.TODO(), tc.Machine)
 				if err != nil {
 					t.Error(err)
 				}
@@ -1645,7 +1645,7 @@ func TestRemediation(t *testing.T) {
 	machine.Annotations[externalRemediationAnnotation] = ""
 
 	scheme := runtime.NewScheme()
-	clusterapis.AddToScheme(scheme)
+	machinev1beta1.AddToScheme(scheme)
 	bmoapis.AddToScheme(scheme)
 	corev1.AddToScheme(scheme)
 
@@ -1662,7 +1662,7 @@ func TestRemediation(t *testing.T) {
 	c.Create(context.TODO(), host)
 	c.Create(context.TODO(), node)
 
-	err = actuator.Update(context.TODO(), nil, machine)
+	err = actuator.Update(context.TODO(), machine)
 	if err != nil {
 		t.Errorf("unexpected error %v", err)
 	}
@@ -1677,12 +1677,12 @@ func TestRemediation(t *testing.T) {
 	host.Status.PoweredOn = false
 	c.Update(context.TODO(), host)
 
-	err = actuator.Update(context.TODO(), nil, machine)
+	err = actuator.Update(context.TODO(), machine)
 	if err != nil {
 		t.Errorf("unexpected error %v", err)
 	}
 
-	machine = &machinev1.Machine{}
+	machine = &machinev1beta1.Machine{}
 	c.Get(context.TODO(), machineNamespacedName, machine)
 
 	if _, exists := machine.Annotations[poweredOffForRemediation]; !exists {
@@ -1690,15 +1690,15 @@ func TestRemediation(t *testing.T) {
 		t.Fail()
 	}
 
-	err = actuator.Update(context.TODO(), nil, machine)
+	err = actuator.Update(context.TODO(), machine)
 	if err == nil {
 		t.Errorf("expected a requeue err but err was nil")
 	} else {
 		switch err.(type) {
-			case *clustererror.RequeueAfterError:
-				break
-			default:
-				t.Errorf("unexpected error %v", err)
+		case *machineapierrors.RequeueAfterError:
+			break
+		default:
+			t.Errorf("unexpected error %v", err)
 		}
 	}
 
@@ -1709,7 +1709,7 @@ func TestRemediation(t *testing.T) {
 		t.Fail()
 	}
 
-	err = actuator.Update(context.TODO(), nil, machine)
+	err = actuator.Update(context.TODO(), machine)
 	if err != nil {
 		t.Errorf("unexpected error %v", err)
 	}
@@ -1731,12 +1731,12 @@ func TestRemediation(t *testing.T) {
 	c.Create(context.TODO(), node)
 	c.Update(context.TODO(), machine)
 
-	err = actuator.Update(context.TODO(), nil, machine)
+	err = actuator.Update(context.TODO(), machine)
 	if err != nil {
 		t.Errorf("unexpected error %v", err)
 	}
 
-	machine = &machinev1.Machine{}
+	machine = &machinev1beta1.Machine{}
 	c.Get(context.TODO(), machineNamespacedName, machine)
 
 	if len(machine.Annotations) > 0 {
@@ -1752,11 +1752,11 @@ func TestRemediation(t *testing.T) {
 	}
 
 	//make sure nothing happens after remediation
-	err = actuator.Update(context.TODO(), nil, machine)
+	err = actuator.Update(context.TODO(), machine)
 	if err != nil {
 		t.Errorf("unexpected error %v", err)
 	}
-	err = actuator.Update(context.TODO(), nil, machine)
+	err = actuator.Update(context.TODO(), machine)
 	if err != nil {
 		t.Errorf("unexpected error %v", err)
 	}
@@ -1810,17 +1810,17 @@ func getBareMetalHost(name string) (*bmh.BareMetalHost, types.NamespacedName) {
 	return host, hostNamespacedName
 }
 
-func getMachine(name string) (*machinev1.Machine, types.NamespacedName) {
-	machine := &machinev1.Machine{
+func getMachine(name string) (*machinev1beta1.Machine, types.NamespacedName) {
+	machine := &machinev1beta1.Machine{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: testRemediationNamespace,
 		},
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Machine",
-			APIVersion: machinev1.SchemeGroupVersion.String(),
+			APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 		},
-		Status: machinev1.MachineStatus{},
+		Status: machinev1beta1.MachineStatus{},
 	}
 
 	machineNamespacedName := types.NamespacedName{
@@ -1831,7 +1831,7 @@ func getMachine(name string) (*machinev1.Machine, types.NamespacedName) {
 	return machine, machineNamespacedName
 }
 
-func linkMachineAndNode(machine *machinev1.Machine, node *corev1.Node) {
+func linkMachineAndNode(machine *machinev1beta1.Machine, node *corev1.Node) {
 	machine.Status.NodeRef = &corev1.ObjectReference{
 		Kind:      "Node",
 		Namespace: testRemediationNamespace,

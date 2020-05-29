@@ -27,8 +27,8 @@ import (
 	"github.com/openshift/cluster-api-provider-baremetal/pkg/cloud/baremetal/actuators/machine"
 	"github.com/openshift/cluster-api-provider-baremetal/pkg/controller"
 	"github.com/openshift/cluster-api-provider-baremetal/pkg/manager/wrapper"
-	clusterapis "github.com/openshift/cluster-api/pkg/apis"
-	capimachine "github.com/openshift/cluster-api/pkg/controller/machine"
+	machinev1beta1 "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
+	maomachine "github.com/openshift/machine-api-operator/pkg/controller/machine"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/rest"
@@ -90,7 +90,7 @@ func main() {
 		panic(err)
 	}
 
-	if err := clusterapis.AddToScheme(mgr.GetScheme()); err != nil {
+	if err := machinev1beta1.AddToScheme(mgr.GetScheme()); err != nil {
 		panic(err)
 	}
 
@@ -99,7 +99,7 @@ func main() {
 	}
 
 	// the manager wrapper will add an extra Watch to the controller
-	capimachine.AddWithActuator(wrapper.New(mgr), machineActuator)
+	maomachine.AddWithActuator(wrapper.New(mgr), machineActuator)
 
 	if err := controller.AddToManager(mgr); err != nil {
 		log.Error(err, "Failed to add controller to manager")

@@ -13,6 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -115,4 +116,14 @@ func (m *managerWrapper) GetAPIReader() client.Reader {
 // GetWebhookServer returns a webhook.Server
 func (m *managerWrapper) GetWebhookServer() *webhook.Server {
 	return m.manager.GetWebhookServer()
+}
+
+// AddReadyzCheck allows you to add Readyz checker
+func (m *managerWrapper) AddReadyzCheck(name string, check healthz.Checker) error {
+	return m.manager.AddReadyzCheck(name, check)
+}
+
+// AddHealthzCheck allows you to add Healthz checker
+func (m *managerWrapper) AddHealthzCheck(name string, check healthz.Checker) error {
+	return m.manager.AddHealthzCheck(name, check)
 }

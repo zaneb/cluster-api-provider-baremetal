@@ -18,6 +18,13 @@ const (
 	// hosts to block delete operations until the physical host can be
 	// deprovisioned.
 	BareMetalHostFinalizer string = "baremetalhost.metal3.io"
+
+	// PausedAnnotation is the annotation that pauses the reconciliation (triggers
+	// an immediate requeue)
+	PausedAnnotation = "baremetalhost.metal3.io/paused"
+
+	// StatusAnnotation is the annotation that holds the Status of BMH
+	StatusAnnotation = "baremetalhost.metal3.io/status"
 )
 
 // OperationalStatus represents the state of the host
@@ -79,6 +86,9 @@ const (
 
 	// StateReady means the host can be consumed
 	StateReady ProvisioningState = "ready"
+
+	// StateAvailable means the host can be consumed
+	StateAvailable ProvisioningState = "available"
 
 	// StateProvisioning means we are writing an image to the host's
 	// disk(s)
@@ -172,6 +182,15 @@ type BareMetalHostSpec struct {
 	// data to be passed to the host before it boots.
 	UserData *corev1.SecretReference `json:"userData,omitempty"`
 
+	// NetworkData holds the reference to the Secret containing network
+	// configuration (e.g content of network_data.json which is passed
+	// to Config Drive).
+	NetworkData *corev1.SecretReference `json:"networkData,omitempty"`
+
+	// MetaData holds the reference to the Secret containing host metadata
+	// (e.g. meta_data.json which is passed to Config Drive).
+	MetaData *corev1.SecretReference `json:"metaData,omitempty"`
+
 	// Description is a human-entered text used to help identify the host
 	Description string `json:"description,omitempty"`
 
@@ -263,12 +282,13 @@ type Storage struct {
 }
 
 // VLANID is a 12-bit 802.1Q VLAN identifier
+// +kubebuilder:validation:Type=integer
+// +kubebuilder:validation:Minimum=0
+// +kubebuilder:validation:Maximum=4094
 type VLANID int32
 
 // VLAN represents the name and ID of a VLAN
 type VLAN struct {
-	// +kubebuilder:validation:Minimum=0
-	// +kubebuilder:validation:Maximum=4094
 	ID VLANID `json:"id"`
 
 	Name string `json:"name,omitempty"`
@@ -296,8 +316,6 @@ type NIC struct {
 	VLANs []VLAN `json:"vlans,omitempty"`
 
 	// The untagged VLAN ID
-	// +kubebuilder:validation:Minimum=0
-	// +kubebuilder:validation:Maximum=4094
 	VLANID VLANID `json:"vlanId"`
 
 	// Whether the NIC is PXE Bootable
@@ -696,7 +714,7 @@ func (host *BareMetalHost) NewEvent(reason, message string) corev1.Event {
 			Namespace:  host.Namespace,
 			Name:       host.Name,
 			UID:        host.UID,
-			APIVersion: SchemeGroupVersion.Version,
+			APIVersion: SchemeGroupVersion.String(),
 		},
 		Reason:  reason,
 		Message: message,
