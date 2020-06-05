@@ -3,7 +3,7 @@ module github.com/openshift/cluster-api-provider-baremetal
 go 1.13
 
 require (
-	github.com/metal3-io/baremetal-operator v0.0.0-20200504161654-60716c6e110e
+	github.com/metal3-io/baremetal-operator v0.0.0-20200604185307-831ad315a033
 	github.com/onsi/gomega v1.9.0
 	github.com/openshift/machine-api-operator v0.2.1-0.20200402110321-4f3602b96da3
 	golang.org/x/net v0.0.0-20200501053045-e0ff5e5a1de5
