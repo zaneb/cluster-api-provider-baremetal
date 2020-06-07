@@ -53,8 +53,8 @@ allowing it to be powered back on.
 
 ## Remediation Flow
 
-Remediation steps (triggered by the annotation mentioned above):
-1) Power off hosts associated with unhealthy Machine (by adding
+Remediation steps (triggered by `host.metal3.io/external-remediation` annotation on the Machine):
+1) Power off the host associated with unhealthy Machine (by adding
 `reboot.metal3.io/capbm-requested-power-off` annotation)
 2) Add `remediation.metal3.io/powered-off-for-remediation` annotation to the unhealthy Machine
 3) Delete the node
