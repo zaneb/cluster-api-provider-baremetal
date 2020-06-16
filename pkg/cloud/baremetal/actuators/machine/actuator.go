@@ -501,7 +501,7 @@ func (a *Actuator) ensureAnnotation(ctx context.Context, machine *machinev1beta1
 // handleNodeFinalizer adds finalizer to Node if not already exists
 // it also store the node annotations and labels on Machine annotations
 // upon node deletion
-func (a *Actuator) handleNodeFinalizer(ctx context.Context, machine *machinev1.Machine) error {
+func (a *Actuator) handleNodeFinalizer(ctx context.Context, machine *machinev1beta1.Machine) error {
 	node, err := a.getNodeByMachine(ctx, machine)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -841,7 +841,7 @@ func (a *Actuator) remediateIfNeeded(ctx context.Context, machine *machinev1beta
 }
 
 // storeAnnotationsAndLabels copies node's annotations and labels and stores them on machine's annotations
-func (a *Actuator) storeAnnotationsAndLabels(ctx context.Context, node *corev1.Node, machine *machinev1.Machine) error {
+func (a *Actuator) storeAnnotationsAndLabels(ctx context.Context, node *corev1.Node, machine *machinev1beta1.Machine) error {
 	marshaledAnnotations, err := marshal(node.Annotations)
 	if err != nil {
 		log.Printf("Failed to marshal node %s annotations associated with Machine %s: %s",
@@ -871,9 +871,9 @@ func (a *Actuator) storeAnnotationsAndLabels(ctx context.Context, node *corev1.N
 
 // restoreAnnotationsAndLabels copies annotations and labels stored in machine's annotation to the node
 // and removes the annotations used to store that data
-func (a *Actuator) restoreAnnotationsAndLabels(ctx context.Context, node *corev1.Node, machine *machinev1.Machine) error {
+func (a *Actuator) restoreAnnotationsAndLabels(ctx context.Context, node *corev1.Node, machine *machinev1beta1.Machine) error {
 	if len(machine.Annotations) == 0 {
-		return &clustererror.RequeueAfterError{}
+		return &machineapierrors.RequeueAfterError{}
 	}
 
 	nodeAnn, err := unmarshal(machine.Annotations[nodeAnnotationsBackupAnnotation])
