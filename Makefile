@@ -21,7 +21,7 @@ run: generate fmt vet
 
 # Install CRDs into a cluster
 install: manifests
-	kubectl apply -f vendor/github.com/openshift/cluster-api/config/crds/
+	kubectl apply -f vendor/github.com/openshift/machine-api-operator/install
 	kubectl apply -f config/crds
 
 # Deploy controller in the configured Kubernetes cluster in ~/.kube/config
@@ -30,7 +30,7 @@ deploy: manifests
 
 # Generate manifests e.g. CRD, RBAC etc.
 manifests:
-	go run vendor/sigs.k8s.io/controller-tools/cmd/controller-gen/main.go all
+	go run vendor/sigs.k8s.io/controller-tools/cmd/controller-gen/main.go crd paths=./pkg/apis/... output:crd:dir=./config/crds/
 	kustomize build config/ > provider-components.yaml
 
 # Run go fmt against code
@@ -57,3 +57,9 @@ docker-build: test
 # Push the docker image
 docker-push:
 	docker push ${IMG}
+
+.PHONY: vendor
+vendor:
+	go mod tidy
+	go mod vendor
+	go mod verify
