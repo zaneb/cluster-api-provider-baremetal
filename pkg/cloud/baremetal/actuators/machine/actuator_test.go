@@ -5,7 +5,7 @@ import (
 	"sigs.k8s.io/yaml"
 	"testing"
 	"time"
-
+	"reflect"
 	bmoapis "github.com/metal3-io/baremetal-operator/pkg/apis"
 	bmh "github.com/metal3-io/baremetal-operator/pkg/apis/metal3/v1alpha1"
 	bmv1alpha1 "github.com/openshift/cluster-api-provider-baremetal/pkg/apis/baremetal/v1alpha1"
@@ -1632,10 +1632,80 @@ func TestDeleteOfBareMetalHostDeletesMachine(t *testing.T) {
 	}
 }
 
+func TestMarshalAndUnmarshal(t *testing.T) {
+	m := map[string]string{"key1": "val1", "keyWithEmptyValue": "", "key.with.dots": "value.with.dots"}
+
+	marshaled, err := marshal(m)
+
+	if err != nil {
+		t.Errorf("marshal() returned an err: %s", err.Error())
+	}
+
+	unmarshaled, err := unmarshal(marshaled)
+
+	if err != nil {
+		t.Errorf("unmarshal returned an err: %s", err.Error())
+	}
+
+	if !reflect.DeepEqual(unmarshaled, m) {
+		t.Errorf("map is different after unmarshal(marshal(map)). Original map was: %s , unmarshaled map: %s",
+			m, unmarshaled)
+	}
+
+	m = nil
+
+	marshaled, err = marshal(m)
+
+	if err != nil {
+		t.Errorf("marshal() returned an err: %s", err.Error())
+	}
+
+	if marshaled != "" {
+		t.Errorf("Expected marshal(nil) to return an empty string, but recieved: %s ", marshaled)
+	}
+
+	unmarshaled, err = unmarshal(marshaled)
+
+	if err != nil {
+		t.Errorf("unmarshal returned an err: %s", err.Error())
+	}
+
+	if len(unmarshaled) != 0 {
+		t.Errorf("Expected unmarshal(marshal(nil)) to return an empty map but recieved: %s", unmarshaled)
+	}
+
+	m = make(map[string]string)
+
+	marshaled, err = marshal(m)
+
+	if err != nil {
+		t.Errorf("marshal() returned an err: %s", err.Error())
+	}
+
+	if marshaled != "{}" {
+		t.Errorf("Expected marshal() with empty map to return {} but got %s", marshaled)
+	}
+
+	unmarshaled, err = unmarshal(marshaled)
+
+	if err != nil {
+		t.Errorf("unmarshal returned an err: %s", err.Error())
+	}
+
+	if len(unmarshaled) != 0 {
+		t.Errorf("Expected unmarshal(marshal([])) to return an empty map but recieved: %s", unmarshaled)
+	}
+}
+
 func TestRemediation(t *testing.T) {
 	machine, machineNamespacedName := getMachine("machine1")
 	host, hostNamespacedName := getBareMetalHost("host1")
 	node, nodeNamespacedName := getNode("node1")
+	nodeAnnotations := map[string]string{"annName1": "annValue1", "annName2": "annValue2"}
+	nodeLabels := map[string]string{"labelName1": "labelValue1", "labelName2": "labelValue2"}
+
+	node.Annotations = nodeAnnotations
+	node.Labels = nodeLabels
 	linkMachineAndNode(machine, node)
 	host.Status.PoweredOn = true
 
@@ -1690,6 +1760,24 @@ func TestRemediation(t *testing.T) {
 		t.Fail()
 	}
 
+	node = &corev1.Node{}
+	err = c.Get(context.TODO(), nodeNamespacedName, node)
+	nodeBackup := node.DeepCopy()
+
+	machine = &machinev1beta1.Machine{}
+	c.Get(context.TODO(), machineNamespacedName, machine)
+	err = actuator.Update(context.TODO(), machine)
+	if err == nil {
+		t.Errorf("expected a requeue err but err was nil")
+	} else {
+		switch err.(type) {
+		case *machineapierrors.RequeueAfterError:
+			break
+		default:
+			t.Errorf("unexpected error %v", err)
+		}
+	}
+
 	err = actuator.Update(context.TODO(), machine)
 	if err == nil {
 		t.Errorf("expected a requeue err but err was nil")
@@ -1709,11 +1797,28 @@ func TestRemediation(t *testing.T) {
 		t.Fail()
 	}
 
+	//fake client doesn't respect finalizers and deletes the node object
+	//we re-create it with deletion timestamp as this what we expect
+	//from k8s to do
+	now := metav1.Now()
+	nodeBackup.SetDeletionTimestamp(&now)
+	c.Create(context.TODO(), nodeBackup)
+
 	err = actuator.Update(context.TODO(), machine)
-	if err != nil {
-		t.Errorf("unexpected error %v", err)
+	expectRequetAfterError(err, t)
+	node = &corev1.Node{}
+	c.Get(context.TODO(), nodeNamespacedName, node)
+
+	if len(node.Finalizers) > 0 {
+		t.Log("Expected finalizer to be removed but finalizer still exist on node")
+		t.Fail()
 	}
 
+	//fake client won't delete the node even though it has no finalizers anymore, so we delete it
+	err = c.Delete(context.TODO(), nodeBackup)
+	err = c.Delete(context.TODO(), node)
+
+	err = actuator.Update(context.TODO(), machine)
 	host = &bmh.BareMetalHost{}
 	c.Get(context.TODO(), hostNamespacedName, host)
 
@@ -1731,7 +1836,29 @@ func TestRemediation(t *testing.T) {
 	c.Create(context.TODO(), node)
 	c.Update(context.TODO(), machine)
 
+	machine = &machinev1beta1.Machine{}
+	c.Get(context.TODO(), machineNamespacedName, machine)
+
 	err = actuator.Update(context.TODO(), machine)
+	if err != nil {
+		t.Errorf("unexpected error %v", err)
+	}
+
+	node = &corev1.Node{}
+	c.Get(context.TODO(), nodeNamespacedName, node)
+
+	if !reflect.DeepEqual(node.Annotations, nodeAnnotations) {
+		t.Errorf("Node annotations before remediation and after remediation ares not equal")
+	}
+
+	if !reflect.DeepEqual(node.Labels, nodeLabels) {
+		t.Errorf("Node labels before remediation and after remediation ares not equal")
+	}
+
+	machine = &machinev1beta1.Machine{}
+	c.Get(context.TODO(), machineNamespacedName, machine)
+	err = actuator.Update(context.TODO(), machine)
+
 	if err != nil {
 		t.Errorf("unexpected error %v", err)
 	}
@@ -1767,6 +1894,19 @@ func TestRemediation(t *testing.T) {
 	if hasPowerOffRequestAnnotation(host) {
 		t.Log("Expected reboot annotation to be removed but it's still there, maybe reboot loops?")
 		t.Fail()
+	}
+}
+
+func expectRequetAfterError(err error, t *testing.T) {
+	if err == nil {
+		t.Errorf("expected a requeue err but err was nil")
+	} else {
+		switch err.(type) {
+		case *machineapierrors.RequeueAfterError:
+			break
+		default:
+			t.Errorf("unexpected error %v", err)
+		}
 	}
 }
 

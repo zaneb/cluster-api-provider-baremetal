@@ -18,12 +18,8 @@ package machine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"log"
-	"math/rand"
-	"strings"
-	"time"
-
 	bmh "github.com/metal3-io/baremetal-operator/pkg/apis/metal3/v1alpha1"
 	"github.com/metal3-io/baremetal-operator/pkg/utils"
 	bmv1alpha1 "github.com/openshift/cluster-api-provider-baremetal/pkg/apis/baremetal/v1alpha1"
@@ -36,19 +32,26 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/client-go/tools/cache"
+	"log"
+	"math/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
+	"strings"
+	"time"
 )
 
 const (
 	ProviderName = "baremetal"
 	// HostAnnotation is the key for an annotation that should go on a Machine to
 	// reference what BareMetalHost it corresponds to.
-	HostAnnotation                = "metal3.io/BareMetalHost"
-	requeueAfter                  = time.Second * 30
-	externalRemediationAnnotation = "host.metal3.io/external-remediation"
-	poweredOffForRemediation      = "remediation.metal3.io/powered-off-for-remediation"
-	requestPowerOffAnnotation     = "reboot.metal3.io/capbm-requested-power-off"
+	HostAnnotation                  = "metal3.io/BareMetalHost"
+	requeueAfter                    = time.Second * 30
+	externalRemediationAnnotation   = "host.metal3.io/external-remediation"
+	poweredOffForRemediation        = "remediation.metal3.io/powered-off-for-remediation"
+	requestPowerOffAnnotation       = "reboot.metal3.io/capbm-requested-power-off"
+	nodeLabelsBackupAnnotation      = "remediation.metal3.io/node-labels-backup"
+	nodeAnnotationsBackupAnnotation = "remediation.metal3.io/node-annotations-backup"
+	nodeFinalizer                   = "capbm.metal3.io"
 )
 
 // Add RBAC rules to access cluster-api resources
@@ -134,6 +137,10 @@ func (a *Actuator) Create(ctx context.Context, machine *machinev1beta1.Machine) 
 
 	_, err = a.ensureAnnotation(ctx, machine, host)
 	if err != nil {
+		return err
+	}
+
+	if err := a.handleNodeFinalizer(ctx, machine); err != nil {
 		return err
 	}
 
@@ -250,6 +257,10 @@ func (a *Actuator) Update(ctx context.Context, machine *machinev1beta1.Machine) 
 
 	dirty, err := a.ensureAnnotation(ctx, machine, host)
 	if err != nil {
+		return err
+	}
+
+	if err := a.handleNodeFinalizer(ctx, machine); err != nil {
 		return err
 	}
 
@@ -487,6 +498,47 @@ func (a *Actuator) ensureAnnotation(ctx context.Context, machine *machinev1beta1
 	return true, a.client.Update(ctx, machine)
 }
 
+// handleNodeFinalizer adds finalizer to Node if not already exists
+// it also store the node annotations and labels on Machine annotations
+// upon node deletion
+func (a *Actuator) handleNodeFinalizer(ctx context.Context, machine *machinev1beta1.Machine) error {
+	node, err := a.getNodeByMachine(ctx, machine)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+
+		log.Printf("Failed to find node assosicated with Machine %s, error: %s", machine.Name, err.Error())
+		return err
+	}
+
+	if node.DeletionTimestamp.IsZero() {
+		if !utils.StringInList(node.Finalizers, nodeFinalizer) {
+			//add finalizer
+			node.Finalizers = append(node.Finalizers, nodeFinalizer)
+			if err := a.client.Update(ctx, node); err != nil {
+				log.Printf("Failed to add node finalizer to node %s, error: %s", node.Name, err.Error())
+				return err
+			}
+		}
+	} else {
+		//node is in deletion process
+		if utils.StringInList(node.Finalizers, nodeFinalizer) {
+			if err := a.storeAnnotationsAndLabels(ctx, node, machine); err != nil {
+				return err
+			}
+
+			//remove finalizer
+			node.Finalizers = utils.FilterStringFromList(node.Finalizers, nodeFinalizer)
+			if err := a.client.Update(ctx, node); err != nil {
+				log.Printf("Failed to remove node finalizer from %s, error: %s", node.Name, err.Error())
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // setError sets the ErrorMessage and ErrorReason fields on the machine and logs
 // the message. It assumes the reason is invalid configuration, since that is
 // currently the only relevant MachineStatusError choice.
@@ -717,7 +769,8 @@ The full remediation flow is:
 3) Delete the node
 4) Power on the host
 5) Wait for the node the come up (by waiting for the node to be registered in the cluster)
-6) Remove poweredOffForRemediation annotation and the MAO's machine unhealthy annotation
+6) Restore node's annotations and labels
+7) Remove poweredOffForRemediation annotation, MAO's machine unhealthy annotation and annotations/labels backup
 */
 func (a *Actuator) remediateIfNeeded(ctx context.Context, machine *machinev1beta1.Machine, baremetalhost *bmh.BareMetalHost) error {
 	if len(machine.Annotations) == 0 {
@@ -777,7 +830,131 @@ func (a *Actuator) remediateIfNeeded(ctx context.Context, machine *machinev1beta
 		return &machineapierrors.RequeueAfterError{RequeueAfter: time.Second * 5}
 	}
 
-	// node is now available again
+	// node is now available again - restore annotations and labels
+	if _, annotationsBackupExists := machine.Annotations[nodeAnnotationsBackupAnnotation]; annotationsBackupExists {
+		return a.restoreAnnotationsAndLabels(ctx, node, machine)
+	}
+
+	//remediation is done
 	log.Printf("Node %s is available, remediation of Machine %s complete", node.Name, machine.Name)
 	return a.deleteRemediationAnnotations(ctx, machine)
+}
+
+// storeAnnotationsAndLabels copies node's annotations and labels and stores them on machine's annotations
+func (a *Actuator) storeAnnotationsAndLabels(ctx context.Context, node *corev1.Node, machine *machinev1beta1.Machine) error {
+	marshaledAnnotations, err := marshal(node.Annotations)
+	if err != nil {
+		log.Printf("Failed to marshal node %s annotations associated with Machine %s: %s",
+			node.Name, machine.Name, err.Error())
+		//if marsahl fails we want to continue without blocking on this, as this error
+		//not likely to be resolved in the next run
+	}
+
+	marshaledLabels, err := marshal(node.Labels)
+	if err != nil {
+		log.Printf("Failed to marshal node %s labels associated with Machine %s: %s",
+			node.Name, machine.Name, err.Error())
+	}
+
+	if len(marshaledAnnotations) > 0 || len(marshaledLabels) > 0 {
+		machine.Annotations[nodeLabelsBackupAnnotation] = marshaledLabels
+		machine.Annotations[nodeAnnotationsBackupAnnotation] = marshaledAnnotations
+
+		err = a.client.Update(ctx, machine)
+		if err != nil {
+			log.Printf("Failed to update machine with node's annotations and labels %s: %s", machine.Name, err.Error())
+			return err
+		}
+	}
+	return nil
+}
+
+// restoreAnnotationsAndLabels copies annotations and labels stored in machine's annotation to the node
+// and removes the annotations used to store that data
+func (a *Actuator) restoreAnnotationsAndLabels(ctx context.Context, node *corev1.Node, machine *machinev1beta1.Machine) error {
+	if len(machine.Annotations) == 0 {
+		return &machineapierrors.RequeueAfterError{}
+	}
+
+	nodeAnn, err := unmarshal(machine.Annotations[nodeAnnotationsBackupAnnotation])
+	if err != nil {
+		log.Printf("failed to unmarshal node's annotations from %s: %s", machine.Name, err.Error())
+		//if unmarsahl fails we want to continue without blocking on this, as this error
+		//not likely to be resolved in the next run
+	}
+
+	nodeLabels, err := unmarshal(machine.Annotations[nodeLabelsBackupAnnotation])
+	if err != nil {
+		log.Printf("failed to unmarshal node's labels from %s: %s", machine.Name, err.Error())
+	}
+
+	if len(nodeLabels) > 0 || len(nodeAnn) > 0 {
+		node.Annotations = a.mergeMaps(node.Annotations, nodeAnn)
+		node.Labels = a.mergeMaps(node.Labels, nodeLabels)
+
+		if err := a.client.Update(ctx, node); err != nil {
+			log.Printf("failed to update machine with node's annotations %s: %s", machine.Name, err.Error())
+			return err
+		}
+	}
+
+	delete(machine.Annotations, nodeAnnotationsBackupAnnotation)
+	delete(machine.Annotations, nodeLabelsBackupAnnotation)
+
+	err = a.client.Update(ctx, machine)
+	if err != nil {
+		log.Printf("failed to remove node %s annotations backup from machine %s: %s",
+			node.Name, machine.Name, err.Error())
+		return err
+	}
+
+	return nil
+}
+
+// mergeMaps takes entries from mapToMerge and adds them to prioritizedMap, if entry key not already
+// exists in prioritizedMap. It returns the merged maps
+func (a *Actuator) mergeMaps(prioritizedMap map[string]string, mapToMerge map[string]string) map[string]string {
+	if prioritizedMap == nil {
+		prioritizedMap = make(map[string]string)
+	}
+
+	// restore from backup only if key not exists
+	for annKey, annValue := range mapToMerge {
+		_, exists := prioritizedMap[annKey]
+		if !exists {
+			prioritizedMap[annKey] = annValue
+		}
+	}
+
+	return prioritizedMap
+}
+
+// marshal is a wrapper for json.marshal() and converts its output to string
+// if m is nil - an empty string will be returned
+func marshal(m map[string]string) (string, error) {
+	if m == nil {
+		return "", nil
+	}
+
+	marshaled, err := json.Marshal(m)
+	if err != nil {
+		return "", err
+	}
+
+	return string(marshaled), nil
+}
+
+// unmarshal is a wrapper for json.Unmarshal() for marshaled strings that represent map[string]string
+func unmarshal(marshaled string) (map[string]string, error) {
+	if marshaled == "" {
+		return make(map[string]string), nil
+	}
+
+	decodedValue := make(map[string]string)
+
+	if err := json.Unmarshal([]byte(marshaled), &decodedValue); err != nil {
+		return nil, err
+	}
+
+	return decodedValue, nil
 }

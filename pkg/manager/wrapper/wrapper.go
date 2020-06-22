@@ -5,6 +5,7 @@ import (
 	"log"
 
 	bmh "github.com/metal3-io/baremetal-operator/pkg/apis/metal3/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
@@ -51,11 +52,18 @@ func (m *managerWrapper) Add(r manager.Runnable) error {
 		return fmt.Errorf("Controller was nil")
 	}
 
-	err = c.Watch(&source.Kind{Type: &bmh.BareMetalHost{}}, &handler.EnqueueRequestsFromMapFunc{ToRequests: &mapper{}})
+	err = c.Watch(&source.Kind{Type: &bmh.BareMetalHost{}}, &handler.EnqueueRequestsFromMapFunc{ToRequests: &bmhMapper{}})
 	if err != nil {
 		log.Printf("Error watching BareMetalHosts: %s", err.Error())
 		return err
 	}
+
+	err = c.Watch(&source.Kind{Type: &corev1.Node{}}, &handler.EnqueueRequestsFromMapFunc{ToRequests: &nodeMapper{}})
+	if err != nil {
+		log.Printf("Error watching Nodes: %s", err.Error())
+		return err
+	}
+
 	return nil
 }
 

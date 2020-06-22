@@ -8,11 +8,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-type mapper struct{}
+type bmhMapper struct{}
 
 // Map will return a reconcile request for a Machine if the event is for a
 // BareMetalHost and that BareMetalHost references a Machine.
-func (m *mapper) Map(obj handler.MapObject) []reconcile.Request {
+func (m *bmhMapper) Map(obj handler.MapObject) []reconcile.Request {
 	if host, ok := obj.Object.(*bmh.BareMetalHost); ok {
 		if host.Spec.ConsumerRef != nil && host.Spec.ConsumerRef.Kind == "Machine" && host.Spec.ConsumerRef.APIVersion == machinev1beta1.SchemeGroupVersion.String() {
 			return []reconcile.Request{
