@@ -43,10 +43,41 @@ import (
 func main() {
 	klog.InitFlags(nil)
 
-	watchNamespace := flag.String("namespace", "", "Namespace that the controller watches to reconcile machine-api objects. If unspecified, the controller watches for machine-api objects across all namespaces.")
-	metricsAddr := flag.String("metrics-addr", ":8080", "The address the metric endpoint binds to.")
-	enableLeaderElection := flag.Bool("enable-leader-election", false, "Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
-	healthAddr := flag.String("health-addr", ":9440", "The address for health checking.")
+	watchNamespace := flag.String(
+		"namespace",
+		"",
+		"Namespace that the controller watches to reconcile machine-api objects. If unspecified, the controller watches for machine-api objects across all namespaces.",
+	)
+
+	healthAddr := flag.String(
+		"health-addr",
+		":9440",
+		"The address for health checking.",
+	)
+
+	metricsAddr := flag.String(
+		"metrics-addr",
+		":8080",
+		"The address the metric endpoint binds to.",
+	)
+
+	leaderElectResourceNamespace := flag.String(
+		"leader-elect-resource-namespace",
+		"",
+		"The namespace of resource object that is used for locking during leader election. If unspecified and running in cluster, defaults to the service account namespace for the controller. Required for leader-election outside of a cluster.",
+	)
+
+	leaderElect := flag.Bool(
+		"leader-elect",
+		false,
+		"Start a leader election client and gain leadership before executing the main loop. Enable this when running replicated components for high availability. This will ensure only one of the old or new controller is running at a time, allowing safe upgrades and recovery.",
+	)
+
+	leaderElectLeaseDuration := flag.Duration(
+		"leader-elect-lease-duration",
+		15*time.Second,
+		"The duration that non-leader candidates will wait after observing a leadership renewal until attempting to acquire leadership of a led but unrenewed leader slot. This is effectively the maximum duration that a leader can be stopped before it is replaced by another candidate. This is only applicable if leader election is enabled.",
+	)
 	flag.Parse()
 
 	log := logf.Log.WithName("baremetal-controller-manager")
@@ -66,10 +97,12 @@ func main() {
 
 	// Setup a Manager
 	opts := manager.Options{
-		MetricsBindAddress:     *metricsAddr,
-		LeaderElection:         *enableLeaderElection,
-		LeaderElectionID:       "controller-leader-election-capbm",
-		HealthProbeBindAddress: *healthAddr,
+		HealthProbeBindAddress:  *healthAddr,
+		MetricsBindAddress:      *metricsAddr,
+		LeaderElection:          *leaderElect,
+		LeaderElectionID:        "controller-leader-election-capbm",
+		LeaderElectionNamespace: *leaderElectResourceNamespace,
+		LeaseDuration:           leaderElectLeaseDuration,
 	}
 	if *watchNamespace != "" {
 		opts.Namespace = *watchNamespace
