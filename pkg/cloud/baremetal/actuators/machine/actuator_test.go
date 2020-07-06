@@ -1778,18 +1778,6 @@ func TestRemediation(t *testing.T) {
 		}
 	}
 
-	err = actuator.Update(context.TODO(), machine)
-	if err == nil {
-		t.Errorf("expected a requeue err but err was nil")
-	} else {
-		switch err.(type) {
-		case *machineapierrors.RequeueAfterError:
-			break
-		default:
-			t.Errorf("unexpected error %v", err)
-		}
-	}
-
 	node = &corev1.Node{}
 	err = c.Get(context.TODO(), nodeNamespacedName, node)
 	if !errors.IsNotFound(err) {
@@ -1802,6 +1790,8 @@ func TestRemediation(t *testing.T) {
 	//from k8s to do
 	now := metav1.Now()
 	nodeBackup.SetDeletionTimestamp(&now)
+
+	nodeBackup.ResourceVersion = "" //create won't work with non empty ResourceVersion
 	c.Create(context.TODO(), nodeBackup)
 
 	err = actuator.Update(context.TODO(), machine)
