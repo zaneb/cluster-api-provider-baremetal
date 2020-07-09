@@ -2,10 +2,6 @@ package machine
 
 import (
 	"context"
-	"sigs.k8s.io/yaml"
-	"testing"
-	"time"
-	"reflect"
 	bmoapis "github.com/metal3-io/baremetal-operator/pkg/apis"
 	bmh "github.com/metal3-io/baremetal-operator/pkg/apis/metal3/v1alpha1"
 	bmv1alpha1 "github.com/openshift/cluster-api-provider-baremetal/pkg/apis/baremetal/v1alpha1"
@@ -16,8 +12,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	fakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/yaml"
+	"testing"
+	"time"
 )
 
 const (
@@ -655,6 +655,112 @@ func TestGetHost(t *testing.T) {
 		}
 		if (result != nil) != tc.ExpectPresent {
 			t.Error(tc.FailMessage)
+		}
+	}
+}
+
+func TestEnsureProviderID(t *testing.T) {
+	scheme := runtime.NewScheme()
+	machinev1beta1.AddToScheme(scheme)
+	bmoapis.AddToScheme(scheme)
+	corev1.AddToScheme(scheme)
+
+	c := fakeclient.NewFakeClientWithScheme(scheme)
+
+	testCases := []struct {
+		Machine machinev1beta1.Machine
+		Host    bmh.BareMetalHost
+		Node    corev1.Node
+	}{
+		{
+			Machine: machinev1beta1.Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "mymachine",
+					Namespace: "myns",
+				},
+			},
+			Host: bmh.BareMetalHost{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "myhost",
+					Namespace: "myns",
+				},
+			},
+		},
+		{
+			Machine: machinev1beta1.Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "mymachine2",
+					Namespace: "myns2",
+				},
+				Status: machinev1beta1.MachineStatus{
+					NodeRef: &corev1.ObjectReference{
+						Kind:      "Node",
+						Namespace: "myns2",
+						Name:      "mynode2",
+					},
+				},
+			},
+			Host: bmh.BareMetalHost{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "myhost2",
+					Namespace: "myns2",
+				},
+			},
+			Node: corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "mynode2",
+					Namespace: "myns2",
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		c.Create(context.TODO(), &tc.Machine)
+		c.Create(context.TODO(), &tc.Host)
+		if tc.Node.Name != "" {
+			c.Create(context.TODO(), &tc.Node)
+		}
+		actuator, err := NewActuator(ActuatorParams{
+			Client: c,
+		})
+		if err != nil {
+			t.Error(err)
+		}
+
+		err = actuator.ensureProviderID(context.TODO(), &tc.Machine, &tc.Host)
+		if err != nil {
+			t.Errorf("unexpected error %v", err)
+		}
+
+		// get the machine and make sure it has the correct ProviderID
+		machine := machinev1beta1.Machine{}
+		key := client.ObjectKey{
+			Name:      tc.Machine.Name,
+			Namespace: tc.Machine.Namespace,
+		}
+		err = c.Get(context.TODO(), key, &machine)
+		providerID := machine.Spec.ProviderID
+		if providerID == nil {
+			t.Error("no machine.Spec.ProviderID found")
+		}
+		expectedProviderID := "baremetalhost:///" + tc.Host.Namespace + "/" + tc.Host.Name
+		if *providerID != expectedProviderID {
+			t.Errorf("ProviderID has value %s, expected %s",
+				*providerID, expectedProviderID)
+		}
+		if tc.Node.Name != "" {
+			node := &corev1.Node{}
+			nodeKey := client.ObjectKey{
+				Name:      tc.Node.Name,
+				Namespace: tc.Node.Namespace,
+			}
+			err = c.Get(context.TODO(), nodeKey, node)
+			nodeProviderID := node.Spec.ProviderID
+			if nodeProviderID != expectedProviderID {
+				t.Errorf("Node ProviderID has value %s, expected %s",
+					nodeProviderID, expectedProviderID)
+			}
 		}
 	}
 }

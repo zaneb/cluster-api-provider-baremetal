@@ -274,6 +274,11 @@ func (a *Actuator) Update(ctx context.Context, machine *machinev1beta1.Machine) 
 		return err
 	}
 
+	err = a.ensureProviderID(ctx, machine, host)
+	if err != nil {
+		return err
+	}
+
 	log.Printf("Finished updating machine %v .", machine.Name)
 	return nil
 }
@@ -498,6 +503,43 @@ func (a *Actuator) ensureAnnotation(ctx context.Context, machine *machinev1beta1
 	return true, a.client.Update(ctx, machine)
 }
 
+// ensureProviderID adds the providerID to the Machine spec, if it does
+// not already exist.  Also sets the corresponding ID on the related
+// Node when it becomes referenced via the Status.NodeRef
+func (a *Actuator) ensureProviderID(ctx context.Context, machine *machinev1beta1.Machine, host *bmh.BareMetalHost) error {
+	providerID := "baremetalhost:///" + host.Namespace + "/" + host.Name
+	existingProviderID := machine.Spec.ProviderID
+	if existingProviderID == nil || *existingProviderID != providerID {
+		log.Printf("Setting ProviderID %s for machine %s.", providerID, machine.Name)
+		machine.Spec.ProviderID = &providerID
+		err := a.client.Update(ctx, machine)
+		if err != nil {
+			log.Printf("Failed to update machine ProviderID, error: %s", err.Error())
+			return err
+		}
+	}
+
+	node, err := a.getNodeByMachine(ctx, machine)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			log.Printf("Not setting Node ProviderID - Node does not yet exist for Machine %s", machine.Name)
+			return nil
+		}
+		log.Printf("Failed to get Node for ProviderID, error: %s", err.Error())
+		return err
+	}
+
+	log.Printf("Setting ProviderID %s for node %s.", providerID, node.Name)
+	node.Spec.ProviderID = providerID
+	err = a.client.Update(ctx, node)
+	if err != nil {
+		log.Printf("Failed to update node ProviderID, error: %s", err.Error())
+		return err
+	}
+
+	return nil
+}
+
 // handleNodeFinalizer adds finalizer to Node if not already exists
 // it also store the node annotations and labels on Machine annotations
 // upon node deletion
@@ -508,7 +550,7 @@ func (a *Actuator) handleNodeFinalizer(ctx context.Context, machine *machinev1be
 			return nil
 		}
 
-		log.Printf("Failed to find node assosicated with Machine %s, error: %s", machine.Name, err.Error())
+		log.Printf("Failed to find node associated with Machine %s, error: %s", machine.Name, err.Error())
 		return err
 	}
 
