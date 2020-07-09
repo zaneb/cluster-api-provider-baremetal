@@ -51,7 +51,7 @@ const (
 	requestPowerOffAnnotation       = "reboot.metal3.io/capbm-requested-power-off"
 	nodeLabelsBackupAnnotation      = "remediation.metal3.io/node-labels-backup"
 	nodeAnnotationsBackupAnnotation = "remediation.metal3.io/node-annotations-backup"
-	nodeFinalizer                   = "capbm.metal3.io"
+	nodeFinalizer                   = "metal3.io/capbm"
 )
 
 // Add RBAC rules to access cluster-api resources
