@@ -28,9 +28,6 @@ const (
 	// annotation is present and status is empty, BMO will reconstruct BMH Status
 	// from the status annotation.
 	StatusAnnotation = "baremetalhost.metal3.io/status"
-
-	// UnhealthyAnnotation is the annotation that sets unhealthy status of BMH
-	UnhealthyAnnotation = "baremetalhost.metal3.io/unhealthy"
 )
 
 // RootDeviceHints holds the hints for specifying the storage location
@@ -121,6 +118,10 @@ type ProvisioningState string
 const (
 	// StateNone means the state is unknown
 	StateNone ProvisioningState = ""
+
+	// StateUnmanaged means there is insufficient information available to
+	// register the host
+	StateUnmanaged ProvisioningState = "unmanaged"
 
 	// StateRegistrationError means there was an error registering the
 	// host with the backend
