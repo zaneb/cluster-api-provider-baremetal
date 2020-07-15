@@ -73,6 +73,16 @@ type RootDeviceHints struct {
 	Rotational *bool `json:"rotational,omitempty"`
 }
 
+// BootMode is the boot mode of the system
+// +kubebuilder:validation:Enum=UEFI;legacy
+type BootMode string
+
+// Allowed boot mode from metal3
+const (
+	UEFI   BootMode = "UEFI"
+	Legacy BootMode = "legacy"
+)
+
 // OperationalStatus represents the state of the host
 type OperationalStatus string
 
@@ -215,6 +225,11 @@ type BareMetalHostSpec struct {
 	// Provide guidance about how to choose the device for the image
 	// being provisioned.
 	RootDeviceHints *RootDeviceHints `json:"rootDeviceHints,omitempty"`
+
+	// Select the method of initializing the hardware during boot to
+	// override the value based on the BMC driver.
+	// +optional
+	BootMode BootMode `json:"bootMode,omitempty"`
 
 	// Which MAC address will PXE boot? This is optional for some
 	// types, but required for libvirt VMs driven by vbmc.
@@ -545,6 +560,9 @@ type ProvisionStatus struct {
 
 	// The RootDevicehints set by the user
 	RootDeviceHints *RootDeviceHints `json:"rootDeviceHints,omitempty"`
+
+	// BootMode indicates the boot mode used to provision the node
+	BootMode BootMode `json:"bootMode,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -636,6 +654,11 @@ func (host *BareMetalHost) getLabel(name string) string {
 		return ""
 	}
 	return host.Labels[name]
+}
+
+// HasBMCDetails returns true if the BMC details are set
+func (host *BareMetalHost) HasBMCDetails() bool {
+	return host.Spec.BMC.Address != "" || host.Spec.BMC.CredentialsName != ""
 }
 
 // NeedsHardwareProfile returns true if the profile is not set
