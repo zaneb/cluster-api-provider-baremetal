@@ -19,7 +19,7 @@ require (
 )
 
 replace (
-	github.com/metal3-io/baremetal-operator => github.com/openshift/baremetal-operator v0.0.0-20200710205845-2a7f5897fe5a // Use OpenShift fork
+	github.com/metal3-io/baremetal-operator => github.com/openshift/baremetal-operator v0.0.0-20200715132148-0f91f62a41fe // Use OpenShift fork
 	k8s.io/client-go => k8s.io/client-go v0.18.2
 	sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.5.1-0.20200330174416-a11a908d91e0
 )

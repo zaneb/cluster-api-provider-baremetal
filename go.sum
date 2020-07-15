@@ -659,8 +659,8 @@ github.com/opencontainers/runtime-tools v0.0.0-20181011054405-1d69bd0f9c39/go.mo
 github.com/openshift/api v0.0.0-20200205133042-34f0ec8dab87/go.mod h1:fT6U/JfG8uZzemTRwZA2kBDJP5nWz7v05UHnty/D+pk=
 github.com/openshift/api v0.0.0-20200320142426-0de0d539b0c3/go.mod h1:7k3+uZYOir97walbYUqApHUA2OPhkQpVJHt0n7GJ6P4=
 github.com/openshift/api v0.0.0-20200323095748-e7041f8762a3/go.mod h1:7k3+uZYOir97walbYUqApHUA2OPhkQpVJHt0n7GJ6P4=
-github.com/openshift/baremetal-operator v0.0.0-20200710205845-2a7f5897fe5a h1:XuCeAJdb5MgzCOmY/kBGJgPwv+Q95Dff5xT2hO8QwOc=
-github.com/openshift/baremetal-operator v0.0.0-20200710205845-2a7f5897fe5a/go.mod h1:DOgBIuBcXuTD8uub0jL7h6gBdIBt3CFrwz6K2FtfMBA=
+github.com/openshift/baremetal-operator v0.0.0-20200715132148-0f91f62a41fe h1:bu99IMkaN6o/JcxpWEb1eT8gDdL9hLcwOmfiVIbXWj8=
+github.com/openshift/baremetal-operator v0.0.0-20200715132148-0f91f62a41fe/go.mod h1:DOgBIuBcXuTD8uub0jL7h6gBdIBt3CFrwz6K2FtfMBA=
 github.com/openshift/build-machinery-go v0.0.0-20200211121458-5e3d6e570160/go.mod h1:1CkcsT3aVebzRBzVTSbiKSkJMsC/CASqxesfqEMfJEc=
 github.com/openshift/client-go v0.0.0-20190923180330-3b6373338c9b/go.mod h1:6rzn+JTr7+WYS2E1TExP4gByoABxMznR6y2SnUIkmxk=
 github.com/openshift/client-go v0.0.0-20200320150128-a906f3d8e723/go.mod h1:wNBSSt4RZTHhUWyhBE3gxTR32QpF9DB2SfS14u2IxuE=
