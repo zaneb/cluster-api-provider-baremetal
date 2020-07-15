@@ -2,22 +2,25 @@ package machine
 
 import (
 	"context"
+	"testing"
+	"time"
+
+	"reflect"
+
 	bmoapis "github.com/metal3-io/baremetal-operator/pkg/apis"
 	bmh "github.com/metal3-io/baremetal-operator/pkg/apis/metal3/v1alpha1"
 	bmv1alpha1 "github.com/openshift/cluster-api-provider-baremetal/pkg/apis/baremetal/v1alpha1"
 	machinev1beta1 "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
 	machineapierrors "github.com/openshift/machine-api-operator/pkg/controller/machine"
+	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	fakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/yaml"
-	"testing"
-	"time"
 )
 
 const (
@@ -1943,13 +1946,11 @@ func TestRemediation(t *testing.T) {
 	node = &corev1.Node{}
 	c.Get(context.TODO(), nodeNamespacedName, node)
 
-	if !reflect.DeepEqual(node.Annotations, nodeAnnotations) {
-		t.Errorf("Node annotations before remediation and after remediation ares not equal")
-	}
+	assert.Equal(t, nodeAnnotations, node.Annotations,
+		"Node annotations before remediation and after remediation ares not equal")
 
-	if !reflect.DeepEqual(node.Labels, nodeLabels) {
-		t.Errorf("Node labels before remediation and after remediation ares not equal")
-	}
+	assert.Equal(t, nodeLabels, node.Labels,
+		"Node labels before remediation and after remediation ares not equal")
 
 	machine = &machinev1beta1.Machine{}
 	c.Get(context.TODO(), machineNamespacedName, machine)

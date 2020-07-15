@@ -6,6 +6,7 @@ require (
 	github.com/metal3-io/baremetal-operator v0.0.0
 	github.com/onsi/gomega v1.9.0
 	github.com/openshift/machine-api-operator v0.2.1-0.20200402110321-4f3602b96da3
+	github.com/stretchr/testify v1.4.0
 	golang.org/x/net v0.0.0-20200501053045-e0ff5e5a1de5
 	k8s.io/api v0.18.2
 	k8s.io/apiextensions-apiserver v0.18.2 // indirect
