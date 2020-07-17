@@ -872,6 +872,7 @@ func TestEnsureAnnotation(t *testing.T) {
 func TestDelete(t *testing.T) {
 	scheme := runtime.NewScheme()
 	bmoapis.AddToScheme(scheme)
+	machinev1beta1.AddToScheme(scheme)
 
 	testCases := []struct {
 		CaseName            string
@@ -1171,6 +1172,7 @@ func TestDelete(t *testing.T) {
 		if tc.Host != nil {
 			c.Create(context.TODO(), tc.Host)
 		}
+		c.Create(context.TODO(), &(tc.Machine))
 		actuator, err := NewActuator(ActuatorParams{
 			Client: c,
 		})

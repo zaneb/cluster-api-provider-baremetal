@@ -160,48 +160,70 @@ func (a *Actuator) Delete(ctx context.Context, machine *machinev1beta1.Machine) 
 	if err != nil {
 		return err
 	}
-	if host != nil && host.Spec.ConsumerRef != nil {
-		// don't remove the ConsumerRef if it references some other machine
-		if !consumerRefMatches(host.Spec.ConsumerRef, machine) {
-			log.Printf("host associated with %v, not machine %v.",
-				host.Spec.ConsumerRef.Name, machine.Name)
-			return nil
-		}
-		if host.Spec.Image != nil || host.Spec.Online || host.Spec.UserData != nil {
-			host.Spec.Image = nil
-			host.Spec.Online = false
-			host.Spec.UserData = nil
-			err = a.client.Update(ctx, host)
-			if err != nil && !errors.IsNotFound(err) {
-				return err
-			}
-			return &machineapierrors.RequeueAfterError{}
-		}
 
-		waiting := true
-		switch host.Status.Provisioning.State {
-		case bmh.StateRegistrationError, bmh.StateRegistering,
-			bmh.StateMatchProfile, bmh.StateInspecting,
-			bmh.StateReady, bmh.StateProvisioningError,
-			bmh.StateUnmanaged:
-			// Host is not provisioned
-			waiting = false
-		case bmh.StateExternallyProvisioned:
-			// We have no control over provisioning, so just wait until the
-			// host is powered off
-			waiting = host.Status.PoweredOn
-		}
-		if waiting {
-			return &machineapierrors.RequeueAfterError{RequeueAfter: requeueAfter}
-		} else {
-			host.Spec.ConsumerRef = nil
-			err = a.client.Update(ctx, host)
-			if err != nil && !errors.IsNotFound(err) {
-				return err
-			}
-		}
+	if host == nil {
+		log.Printf("finished deleting machine %v.", machine.Name)
+		return nil
 	}
-	log.Printf("finished deleting machine %v.", machine.Name)
+
+	log.Printf("deleting machine %v using host %v", machine.Name, host.Name)
+
+	if host.Spec.ConsumerRef == nil {
+		log.Printf("removing host annotation from machine %v", machine.Name)
+		_, err := a.clearAnnotation(ctx, machine)
+		if err != nil {
+			return err
+		}
+		return nil // updating the machine will re-enqueue it without us asking
+	}
+
+	// don't remove the ConsumerRef if it references some other
+	// machine, but remove the annotation linking this machine to the
+	// host so the current machine can continue deleting
+	if !consumerRefMatches(host.Spec.ConsumerRef, machine) {
+		log.Printf("host associated with %v, not machine %v.",
+			host.Spec.ConsumerRef.Name, machine.Name)
+		_, err := a.clearAnnotation(ctx, machine)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+
+	if host.Spec.Image != nil || host.Spec.Online || host.Spec.UserData != nil {
+		log.Printf("starting to deprovision host %v", host.Name)
+		host.Spec.Image = nil
+		host.Spec.Online = false
+		host.Spec.UserData = nil
+		err = a.client.Update(ctx, host)
+		if err != nil && !errors.IsNotFound(err) {
+			return err
+		}
+		return &machineapierrors.RequeueAfterError{}
+	}
+
+	waiting := false
+	switch host.Status.Provisioning.State {
+	case bmh.StateProvisioning, bmh.StateProvisioned, bmh.StateDeprovisioning:
+		// Host is still provisioned or being deprovisioned.
+		waiting = true
+	case bmh.StateExternallyProvisioned:
+		// We have no control over provisioning, so just wait until the
+		// host is powered off
+		waiting = host.Status.PoweredOn
+	}
+	if waiting {
+		log.Printf("waiting for host %v to be deprovisioned", host.Name)
+		return &machineapierrors.RequeueAfterError{RequeueAfter: requeueAfter}
+	}
+
+	log.Printf("clearing consumer reference for host %v", host.Name)
+	host.Spec.ConsumerRef = nil
+	err = a.client.Update(ctx, host)
+	if err != nil && !errors.IsNotFound(err) {
+		return err
+	}
+
 	return nil
 }
 
@@ -488,6 +510,7 @@ func (a *Actuator) ensureAnnotation(ctx context.Context, machine *machinev1beta1
 	if annotations == nil {
 		annotations = make(map[string]string)
 	}
+
 	hostKey, err := cache.MetaNamespaceKeyFunc(host)
 	if err != nil {
 		log.Printf("Error parsing annotation value \"%s\": %v", hostKey, err)
@@ -500,7 +523,29 @@ func (a *Actuator) ensureAnnotation(ctx context.Context, machine *machinev1beta1
 		}
 		log.Printf("Warning: found stray annotation for host %s on machine %s. Overwriting.", existing, machine.Name)
 	}
+
+	log.Printf("setting host annotation for %v to %v=%q", machine.Name, HostAnnotation, hostKey)
 	annotations[HostAnnotation] = hostKey
+	machine.ObjectMeta.SetAnnotations(annotations)
+	return true, a.client.Update(ctx, machine)
+}
+
+// clearAnnotation makes sure the machine's host annotation is empty.
+// it returns a boolean to indicate if the machine object was changed
+func (a *Actuator) clearAnnotation(ctx context.Context, machine *machinev1beta1.Machine) (bool, error) {
+
+	annotations := machine.ObjectMeta.GetAnnotations()
+	if annotations == nil {
+		return false, nil
+	}
+
+	_, ok := annotations[HostAnnotation]
+	if !ok {
+		return false, nil
+	}
+
+	log.Printf("clearing host annotation for %v", machine.Name)
+	annotations[HostAnnotation] = ""
 	machine.ObjectMeta.SetAnnotations(annotations)
 	return true, a.client.Update(ctx, machine)
 }
