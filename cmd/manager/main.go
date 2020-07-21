@@ -55,9 +55,10 @@ func main() {
 		"The address for health checking.",
 	)
 
+	// Default machine metrics address defined by MAO - https://github.com/openshift/machine-api-operator/blob/master/pkg/metrics/metrics.go#L16
 	metricsAddr := flag.String(
 		"metrics-addr",
-		":8080",
+		":8081",
 		"The address the metric endpoint binds to.",
 	)
 
