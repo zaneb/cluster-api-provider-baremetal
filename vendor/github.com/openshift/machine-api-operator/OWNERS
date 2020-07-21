@@ -3,3 +3,7 @@ approvers:
   - michaelgugino
   - JoelSpeed
   - elmiko
+  - Danil-Grigorev
+  - alexander-demichev
+
+component: "Cloud Compute"
