@@ -219,6 +219,11 @@ func (a *Actuator) Delete(ctx context.Context, machine *machinev1beta1.Machine) 
 
 	log.Printf("clearing consumer reference for host %v", host.Name)
 	host.Spec.ConsumerRef = nil
+	if utils.StringInList(host.Finalizers, machinev1beta1.MachineFinalizer) {
+		log.Printf("clearing machine finalizer for host %v", host.Name)
+		host.Finalizers = utils.FilterStringFromList(
+			host.Finalizers, machinev1beta1.MachineFinalizer)
+	}
 	err = a.client.Update(ctx, host)
 	if err != nil && !errors.IsNotFound(err) {
 		return err

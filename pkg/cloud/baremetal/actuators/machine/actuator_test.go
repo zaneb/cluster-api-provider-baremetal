@@ -9,6 +9,7 @@ import (
 
 	bmoapis "github.com/metal3-io/baremetal-operator/pkg/apis"
 	bmh "github.com/metal3-io/baremetal-operator/pkg/apis/metal3/v1alpha1"
+	"github.com/metal3-io/baremetal-operator/pkg/utils"
 	bmv1alpha1 "github.com/openshift/cluster-api-provider-baremetal/pkg/apis/baremetal/v1alpha1"
 	machinev1beta1 "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
 	machineapierrors "github.com/openshift/machine-api-operator/pkg/controller/machine"
@@ -880,6 +881,7 @@ func TestDelete(t *testing.T) {
 		Machine             machinev1beta1.Machine
 		ExpectedConsumerRef *corev1.ObjectReference
 		ExpectedResult      error
+		ExpectHostFinalizer bool
 	}{
 		{
 			CaseName: "deprovisioning required",
@@ -887,6 +889,9 @@ func TestDelete(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "myhost",
 					Namespace: "myns",
+					Finalizers: []string{
+						machinev1beta1.MachineFinalizer,
+					},
 				},
 				Spec: bmh.BareMetalHostSpec{
 					ConsumerRef: &corev1.ObjectReference{
@@ -924,14 +929,19 @@ func TestDelete(t *testing.T) {
 				Kind:       "Machine",
 				APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 			},
-			ExpectedResult: &machineapierrors.RequeueAfterError{},
+			ExpectedResult:      &machineapierrors.RequeueAfterError{},
+			ExpectHostFinalizer: true,
 		},
+
 		{
 			CaseName: "deprovisioning in progress",
 			Host: &bmh.BareMetalHost{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "myhost",
 					Namespace: "myns",
+					Finalizers: []string{
+						machinev1beta1.MachineFinalizer,
+					},
 				},
 				Spec: bmh.BareMetalHostSpec{
 					ConsumerRef: &corev1.ObjectReference{
@@ -966,14 +976,19 @@ func TestDelete(t *testing.T) {
 				Kind:       "Machine",
 				APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 			},
-			ExpectedResult: &machineapierrors.RequeueAfterError{RequeueAfter: time.Second * 30},
+			ExpectedResult:      &machineapierrors.RequeueAfterError{RequeueAfter: time.Second * 30},
+			ExpectHostFinalizer: true,
 		},
+
 		{
 			CaseName: "externally provisioned host should be powered down",
 			Host: &bmh.BareMetalHost{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "myhost",
 					Namespace: "myns",
+					Finalizers: []string{
+						machinev1beta1.MachineFinalizer,
+					},
 				},
 				Spec: bmh.BareMetalHostSpec{
 					ConsumerRef: &corev1.ObjectReference{
@@ -1009,14 +1024,19 @@ func TestDelete(t *testing.T) {
 				Kind:       "Machine",
 				APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 			},
-			ExpectedResult: &machineapierrors.RequeueAfterError{RequeueAfter: time.Second * 30},
+			ExpectedResult:      &machineapierrors.RequeueAfterError{RequeueAfter: time.Second * 30},
+			ExpectHostFinalizer: true,
 		},
+
 		{
 			CaseName: "consumer ref should be removed from externally provisioned host",
 			Host: &bmh.BareMetalHost{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "myhost",
 					Namespace: "myns",
+					Finalizers: []string{
+						machinev1beta1.MachineFinalizer,
+					},
 				},
 				Spec: bmh.BareMetalHostSpec{
 					ConsumerRef: &corev1.ObjectReference{
@@ -1046,13 +1066,18 @@ func TestDelete(t *testing.T) {
 					},
 				},
 			},
+			ExpectHostFinalizer: false,
 		},
+
 		{
 			CaseName: "consumer ref should be removed",
 			Host: &bmh.BareMetalHost{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "myhost",
 					Namespace: "myns",
+					Finalizers: []string{
+						machinev1beta1.MachineFinalizer,
+					},
 				},
 				Spec: bmh.BareMetalHostSpec{
 					ConsumerRef: &corev1.ObjectReference{
@@ -1081,13 +1106,18 @@ func TestDelete(t *testing.T) {
 					},
 				},
 			},
+			ExpectHostFinalizer: false,
 		},
+
 		{
 			CaseName: "consumer ref does not match, so it should not be removed",
 			Host: &bmh.BareMetalHost{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "myhost",
 					Namespace: "myns",
+					Finalizers: []string{
+						machinev1beta1.MachineFinalizer,
+					},
 				},
 				Spec: bmh.BareMetalHostSpec{
 					ConsumerRef: &corev1.ObjectReference{
@@ -1125,13 +1155,18 @@ func TestDelete(t *testing.T) {
 				Kind:       "Machine",
 				APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 			},
+			ExpectHostFinalizer: true,
 		},
+
 		{
 			CaseName: "no consumer ref, so this is a no-op",
 			Host: &bmh.BareMetalHost{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "myhost",
 					Namespace: "myns",
+					Finalizers: []string{
+						machinev1beta1.MachineFinalizer,
+					},
 				},
 			},
 			Machine: machinev1beta1.Machine{
@@ -1147,7 +1182,9 @@ func TestDelete(t *testing.T) {
 					},
 				},
 			},
+			ExpectHostFinalizer: true,
 		},
+
 		{
 			CaseName: "no host at all, so this is a no-op",
 			Host:     nil,
@@ -1164,6 +1201,7 @@ func TestDelete(t *testing.T) {
 					},
 				},
 			},
+			ExpectHostFinalizer: false,
 		},
 	}
 
@@ -1196,25 +1234,42 @@ func TestDelete(t *testing.T) {
 			t.Errorf("%s: unexpected error \"%v\" (expected \"%v\")",
 				tc.CaseName, err, tc.ExpectedResult)
 		}
-		if tc.Host != nil {
-			key := client.ObjectKey{
-				Name:      tc.Host.Name,
-				Namespace: tc.Host.Namespace,
-			}
-			host := bmh.BareMetalHost{}
-			c.Get(context.TODO(), key, &host)
-			name := ""
-			expectedName := ""
-			if host.Spec.ConsumerRef != nil {
-				name = host.Spec.ConsumerRef.Name
-			}
-			if tc.ExpectedConsumerRef != nil {
-				expectedName = tc.ExpectedConsumerRef.Name
-			}
-			if name != expectedName {
-				t.Errorf("%s: expected ConsumerRef %v, found %v",
-					tc.CaseName, tc.ExpectedConsumerRef, host.Spec.ConsumerRef)
-			}
+
+		if tc.Host == nil {
+			continue
+		}
+
+		key := client.ObjectKey{
+			Name:      tc.Host.Name,
+			Namespace: tc.Host.Namespace,
+		}
+		host := bmh.BareMetalHost{}
+		c.Get(context.TODO(), key, &host)
+
+		name := ""
+		if host.Spec.ConsumerRef != nil {
+			name = host.Spec.ConsumerRef.Name
+		}
+
+		expectedName := ""
+		if tc.ExpectedConsumerRef != nil {
+			expectedName = tc.ExpectedConsumerRef.Name
+		}
+
+		if name != expectedName {
+			t.Errorf("%s: expected ConsumerRef %v, found %v",
+				tc.CaseName, tc.ExpectedConsumerRef, host.Spec.ConsumerRef)
+		}
+
+		t.Logf("host finalizers %v", host.Finalizers)
+		haveFinalizer := utils.StringInList(host.Finalizers, machinev1beta1.MachineFinalizer)
+		if tc.ExpectHostFinalizer && !haveFinalizer {
+			t.Errorf("%s: expected host to have finalizer and it does not %v",
+				tc.CaseName, host.Finalizers)
+		}
+		if !tc.ExpectHostFinalizer && haveFinalizer {
+			t.Errorf("%s: did not expect host to have finalizer and it does %v",
+				tc.CaseName, host.Finalizers)
 		}
 	}
 }
