@@ -49,11 +49,21 @@ func TestChooseHost(t *testing.T) {
 				APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 			},
 		},
+		Status: bmh.BareMetalHostStatus{
+			Provisioning: bmh.ProvisionStatus{
+				State: bmh.StateReady,
+			},
+		},
 	}
 	host2 := bmh.BareMetalHost{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "host2",
 			Namespace: "myns",
+		},
+		Status: bmh.BareMetalHostStatus{
+			Provisioning: bmh.ProvisionStatus{
+				State: bmh.StateReady,
+			},
 		},
 	}
 	host3 := bmh.BareMetalHost{
@@ -69,11 +79,21 @@ func TestChooseHost(t *testing.T) {
 				APIVersion: machinev1beta1.SchemeGroupVersion.String(),
 			},
 		},
+		Status: bmh.BareMetalHostStatus{
+			Provisioning: bmh.ProvisionStatus{
+				State: bmh.StateReady,
+			},
+		},
 	}
 	host4 := bmh.BareMetalHost{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "host4",
 			Namespace: "someotherns",
+		},
+		Status: bmh.BareMetalHostStatus{
+			Provisioning: bmh.ProvisionStatus{
+				State: bmh.StateReady,
+			},
 		},
 	}
 	discoveredHost := bmh.BareMetalHost{
@@ -83,6 +103,9 @@ func TestChooseHost(t *testing.T) {
 		},
 		Status: bmh.BareMetalHostStatus{
 			ErrorMessage: "this host is discovered and not usable",
+			Provisioning: bmh.ProvisionStatus{
+				State: bmh.StateRegistrationError,
+			},
 		},
 	}
 	hostWithLabel := bmh.BareMetalHost{
@@ -90,6 +113,11 @@ func TestChooseHost(t *testing.T) {
 			Name:      "host_with_label",
 			Namespace: "myns",
 			Labels:    map[string]string{"key1": "value1"},
+		},
+		Status: bmh.BareMetalHostStatus{
+			Provisioning: bmh.ProvisionStatus{
+				State: bmh.StateReady,
+			},
 		},
 	}
 	externallyProvisionedHost := bmh.BareMetalHost{
@@ -99,6 +127,11 @@ func TestChooseHost(t *testing.T) {
 		},
 		Spec: bmh.BareMetalHostSpec{
 			ExternallyProvisioned: true,
+		},
+		Status: bmh.BareMetalHostStatus{
+			Provisioning: bmh.ProvisionStatus{
+				State: bmh.StateExternallyProvisioned,
+			},
 		},
 	}
 	externallyProvisionedAndConsumedHost := bmh.BareMetalHost{
@@ -113,6 +146,11 @@ func TestChooseHost(t *testing.T) {
 				Namespace:  "myns",
 				Kind:       "Machine",
 				APIVersion: machinev1beta1.SchemeGroupVersion.String(),
+			},
+		},
+		Status: bmh.BareMetalHostStatus{
+			Provisioning: bmh.ProvisionStatus{
+				State: bmh.StateExternallyProvisioned,
 			},
 		},
 	}

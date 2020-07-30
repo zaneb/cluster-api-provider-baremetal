@@ -448,6 +448,10 @@ func (a *Actuator) chooseHost(ctx context.Context, machine *machinev1beta1.Machi
 			// the host is being deleted
 			continue
 		}
+		if host.Status.Provisioning.State != bmh.StateReady {
+			// the host has not completed introspection or has an error
+			continue
+		}
 		if host.Status.ErrorMessage != "" {
 			// the host has some sort of error
 			continue
