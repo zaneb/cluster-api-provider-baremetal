@@ -138,13 +138,14 @@ func TestChooseHost(t *testing.T) {
 		})
 
 	testCases := []struct {
+		Scenario         string
 		Machine          machinev1beta1.Machine
 		Hosts            []runtime.Object
 		ExpectedHostName string
 		Config           *bmv1alpha1.BareMetalMachineProviderSpec
 	}{
 		{
-			// should pick host2, which lacks a ConsumerRef
+			Scenario: "should pick host2, which lacks a ConsumerRef",
 			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "machine1",
@@ -163,7 +164,7 @@ func TestChooseHost(t *testing.T) {
 			Config:           config,
 		},
 		{
-			// should ignore discoveredHost and pick host2, which lacks a ConsumerRef
+			Scenario: "should ignore discoveredHost and pick host2, which lacks a ConsumerRef",
 			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "machine1",
@@ -179,7 +180,7 @@ func TestChooseHost(t *testing.T) {
 			Config:           config,
 		},
 		{
-			// should pick host3, which already has a matching ConsumerRef
+			Scenario: "should pick host3, which already has a matching ConsumerRef",
 			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "machine1",
@@ -198,8 +199,7 @@ func TestChooseHost(t *testing.T) {
 			Config:           config,
 		},
 		{
-			// should not pick a host, because two are already taken, and the third is in
-			// a different namespace
+			Scenario: "should not pick a host, because two are already taken, and the third is in a different namespace",
 			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "machine2",
@@ -218,7 +218,7 @@ func TestChooseHost(t *testing.T) {
 			Config:           config,
 		},
 		{
-			// Can choose hosts with a label, even without a label selector
+			Scenario: "Can choose hosts with a label, even without a label selector",
 			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "machine1",
@@ -237,7 +237,7 @@ func TestChooseHost(t *testing.T) {
 			Config:           config,
 		},
 		{
-			// Choose the host with the right label
+			Scenario: "Choose the host with the right label",
 			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "machine1",
@@ -256,7 +256,7 @@ func TestChooseHost(t *testing.T) {
 			Config:           config2,
 		},
 		{
-			// No host that matches required label
+			Scenario: "No host that matches required label",
 			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "machine1",
@@ -275,7 +275,7 @@ func TestChooseHost(t *testing.T) {
 			Config:           config3,
 		},
 		{
-			// Host that matches a matchExpression
+			Scenario: "Host that matches a matchExpression",
 			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "machine1",
@@ -294,7 +294,7 @@ func TestChooseHost(t *testing.T) {
 			Config:           config4,
 		},
 		{
-			// No Host available that matches a matchExpression
+			Scenario: "No Host available that matches a matchExpression",
 			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "machine1",
@@ -313,7 +313,7 @@ func TestChooseHost(t *testing.T) {
 			Config:           config4,
 		},
 		{
-			// No host chosen given an Invalid match expression
+			Scenario: "No host chosen given an Invalid match expression",
 			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "machine1",
@@ -332,7 +332,7 @@ func TestChooseHost(t *testing.T) {
 			Config:           config5,
 		},
 		{
-			// No host chosen given only externally provisioned choices
+			Scenario: "No host chosen given only externally provisioned choices",
 			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "machine1",
@@ -351,7 +351,7 @@ func TestChooseHost(t *testing.T) {
 			Config:           config,
 		},
 		{
-			// No host chosen given only externally provisioned choices
+			Scenario: "Choose externally provisioned host with consumer ref set",
 			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "machine1",
@@ -373,34 +373,38 @@ func TestChooseHost(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		c := fakeclient.NewFakeClientWithScheme(scheme, tc.Hosts...)
+		t.Run(tc.Scenario, func(t *testing.T) {
+			c := fakeclient.NewFakeClientWithScheme(scheme, tc.Hosts...)
 
-		actuator, err := NewActuator(ActuatorParams{
-			Client: c,
-		})
-		if err != nil {
-			t.Errorf("%v", err)
-		}
-		pspec, err := yaml.Marshal(&tc.Config)
-		if err != nil {
-			t.Logf("could not marshal BareMetalMachineProviderSpec: %v", err)
-			t.FailNow()
-		}
-		tc.Machine.Spec.ProviderSpec = machinev1beta1.ProviderSpec{Value: &runtime.RawExtension{Raw: pspec}}
-		result, err := actuator.chooseHost(context.TODO(), &tc.Machine)
-		if tc.ExpectedHostName == "" {
-			if result != nil {
-				t.Error("found host when none should have been available")
+			actuator, err := NewActuator(ActuatorParams{
+				Client: c,
+			})
+			if err != nil {
+				t.Errorf("%v", err)
 			}
-			continue
-		}
-		if err != nil {
-			t.Errorf("%v", err)
-			return
-		}
-		if result.Name != tc.ExpectedHostName {
-			t.Errorf("host %s chosen instead of %s", result.Name, tc.ExpectedHostName)
-		}
+			pspec, err := yaml.Marshal(&tc.Config)
+			if err != nil {
+				t.Logf("could not marshal BareMetalMachineProviderSpec: %v", err)
+				t.FailNow()
+			}
+			tc.Machine.Spec.ProviderSpec = machinev1beta1.ProviderSpec{Value: &runtime.RawExtension{Raw: pspec}}
+			result, err := actuator.chooseHost(context.TODO(), &tc.Machine)
+			if tc.ExpectedHostName == "" {
+				if result != nil {
+					t.Error("found host when none should have been available")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("%v", err)
+				return
+			}
+			if result == nil && tc.ExpectedHostName != "" {
+				t.Errorf("no host found, expected %s", tc.ExpectedHostName)
+			} else if result.Name != tc.ExpectedHostName {
+				t.Errorf("host %s chosen instead of %s", result.Name, tc.ExpectedHostName)
+			}
+		})
 	}
 }
 
