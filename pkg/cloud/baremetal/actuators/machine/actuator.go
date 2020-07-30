@@ -431,16 +431,34 @@ func (a *Actuator) chooseHost(ctx context.Context, machine *machinev1beta1.Machi
 
 	availableHosts := []*bmh.BareMetalHost{}
 	for i, host := range hosts.Items {
-		if host.Available() {
-			if labelSelector.Matches(labels.Set(host.ObjectMeta.Labels)) {
-				log.Printf("Host '%s' matched hostSelector for Machine '%s'", host.Name, machine.Name)
-				availableHosts = append(availableHosts, &hosts.Items[i])
-			} else {
-				log.Printf("Host '%s' did not match hostSelector for Machine '%s'", host.Name, machine.Name)
-			}
-		} else if host.Spec.ConsumerRef != nil && consumerRefMatches(host.Spec.ConsumerRef, machine) {
+
+		if consumerRefMatches(host.Spec.ConsumerRef, machine) {
+			// if we see a host that thinks this machine is consuming
+			// it, we should oblige it
 			log.Printf("found host %s with existing ConsumerRef", host.Name)
 			return &hosts.Items[i], nil
+		}
+
+		if host.Spec.ConsumerRef != nil {
+			// consumerRef is set and does not match, so the host is
+			// in use
+			continue
+		}
+		if host.GetDeletionTimestamp() != nil {
+			// the host is being deleted
+			continue
+		}
+		if host.Status.ErrorMessage != "" {
+			// the host has some sort of error
+			continue
+		}
+		if labelSelector.Matches(labels.Set(host.ObjectMeta.Labels)) {
+			log.Printf("Host '%s' matched hostSelector for Machine '%s'",
+				host.Name, machine.Name)
+			availableHosts = append(availableHosts, &hosts.Items[i])
+		} else {
+			log.Printf("Host '%s' did not match hostSelector for Machine '%s'",
+				host.Name, machine.Name)
 		}
 	}
 	log.Printf("%d hosts available while choosing host for machine '%s'", len(availableHosts), machine.Name)
@@ -458,6 +476,9 @@ func (a *Actuator) chooseHost(ctx context.Context, machine *machinev1beta1.Machi
 // consumerRefMatches returns a boolean based on whether the consumer
 // reference and machine metadata match
 func consumerRefMatches(consumer *corev1.ObjectReference, machine *machinev1beta1.Machine) bool {
+	if consumer == nil {
+		return false
+	}
 	if consumer.Name != machine.Name {
 		return false
 	}
