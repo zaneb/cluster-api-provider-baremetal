@@ -452,6 +452,12 @@ func (a *Actuator) chooseHost(ctx context.Context, machine *machinev1beta1.Machi
 			// the host has some sort of error
 			continue
 		}
+		if host.Spec.ExternallyProvisioned {
+			// the host was provisioned by something else, we should
+			// not overwrite it
+			continue
+		}
+
 		if labelSelector.Matches(labels.Set(host.ObjectMeta.Labels)) {
 			log.Printf("Host '%s' matched hostSelector for Machine '%s'",
 				host.Name, machine.Name)

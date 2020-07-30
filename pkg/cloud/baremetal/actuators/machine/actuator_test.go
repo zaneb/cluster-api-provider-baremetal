@@ -92,6 +92,30 @@ func TestChooseHost(t *testing.T) {
 			Labels:    map[string]string{"key1": "value1"},
 		},
 	}
+	externallyProvisionedHost := bmh.BareMetalHost{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "externally-provisioned-host",
+			Namespace: "myns",
+		},
+		Spec: bmh.BareMetalHostSpec{
+			ExternallyProvisioned: true,
+		},
+	}
+	externallyProvisionedAndConsumedHost := bmh.BareMetalHost{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "externally-provisioned-and-consumed-host",
+			Namespace: "myns",
+		},
+		Spec: bmh.BareMetalHostSpec{
+			ExternallyProvisioned: true,
+			ConsumerRef: &corev1.ObjectReference{
+				Name:       "machine1",
+				Namespace:  "myns",
+				Kind:       "Machine",
+				APIVersion: machinev1beta1.SchemeGroupVersion.String(),
+			},
+		},
+	}
 
 	config, providerSpec := newConfig(t, "", map[string]string{}, []bmv1alpha1.HostSelectorRequirement{})
 	config2, providerSpec2 := newConfig(t, "", map[string]string{"key1": "value1"}, []bmv1alpha1.HostSelectorRequirement{})
@@ -306,6 +330,45 @@ func TestChooseHost(t *testing.T) {
 			Hosts:            []runtime.Object{&host2, &hostWithLabel},
 			ExpectedHostName: "",
 			Config:           config5,
+		},
+		{
+			// No host chosen given only externally provisioned choices
+			Machine: machinev1beta1.Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "machine1",
+					Namespace: "myns",
+				},
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "Machine",
+					APIVersion: machinev1beta1.SchemeGroupVersion.String(),
+				},
+				Spec: machinev1beta1.MachineSpec{
+					ProviderSpec: providerSpec5,
+				},
+			},
+			Hosts:            []runtime.Object{&externallyProvisionedHost},
+			ExpectedHostName: "",
+			Config:           config,
+		},
+		{
+			// No host chosen given only externally provisioned choices
+			Machine: machinev1beta1.Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "machine1",
+					Namespace: "myns",
+				},
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "Machine",
+					APIVersion: machinev1beta1.SchemeGroupVersion.String(),
+				},
+				Spec: machinev1beta1.MachineSpec{
+					ProviderSpec: providerSpec5,
+				},
+			},
+			Hosts: []runtime.Object{&externallyProvisionedHost,
+				&externallyProvisionedAndConsumedHost},
+			ExpectedHostName: "externally-provisioned-and-consumed-host",
+			Config:           config,
 		},
 	}
 
