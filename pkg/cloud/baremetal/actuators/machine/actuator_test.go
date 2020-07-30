@@ -85,7 +85,7 @@ func TestChooseHost(t *testing.T) {
 			ErrorMessage: "this host is discovered and not usable",
 		},
 	}
-	host_with_label := bmh.BareMetalHost{
+	hostWithLabel := bmh.BareMetalHost{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "host_with_label",
 			Namespace: "myns",
@@ -208,8 +208,8 @@ func TestChooseHost(t *testing.T) {
 					ProviderSpec: providerSpec,
 				},
 			},
-			Hosts:            []runtime.Object{&host_with_label},
-			ExpectedHostName: host_with_label.Name,
+			Hosts:            []runtime.Object{&hostWithLabel},
+			ExpectedHostName: hostWithLabel.Name,
 			Config:           config,
 		},
 		{
@@ -227,8 +227,8 @@ func TestChooseHost(t *testing.T) {
 					ProviderSpec: providerSpec2,
 				},
 			},
-			Hosts:            []runtime.Object{&host2, &host_with_label},
-			ExpectedHostName: host_with_label.Name,
+			Hosts:            []runtime.Object{&host2, &hostWithLabel},
+			ExpectedHostName: hostWithLabel.Name,
 			Config:           config2,
 		},
 		{
@@ -246,7 +246,7 @@ func TestChooseHost(t *testing.T) {
 					ProviderSpec: providerSpec3,
 				},
 			},
-			Hosts:            []runtime.Object{&host2, &host_with_label},
+			Hosts:            []runtime.Object{&host2, &hostWithLabel},
 			ExpectedHostName: "",
 			Config:           config3,
 		},
@@ -265,8 +265,8 @@ func TestChooseHost(t *testing.T) {
 					ProviderSpec: providerSpec4,
 				},
 			},
-			Hosts:            []runtime.Object{&host2, &host_with_label},
-			ExpectedHostName: host_with_label.Name,
+			Hosts:            []runtime.Object{&host2, &hostWithLabel},
+			ExpectedHostName: hostWithLabel.Name,
 			Config:           config4,
 		},
 		{
@@ -303,7 +303,7 @@ func TestChooseHost(t *testing.T) {
 					ProviderSpec: providerSpec5,
 				},
 			},
-			Hosts:            []runtime.Object{&host2, &host_with_label},
+			Hosts:            []runtime.Object{&host2, &hostWithLabel},
 			ExpectedHostName: "",
 			Config:           config5,
 		},
