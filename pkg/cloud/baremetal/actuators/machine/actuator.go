@@ -308,8 +308,10 @@ func (a *Actuator) Update(ctx context.Context, machine *machinev1beta1.Machine) 
 		return err
 	}
 
-	err = a.ensureProviderID(ctx, machine, host)
-	if err != nil {
+	if err := a.ensureMachineProviderID(ctx, machine, host); err != nil {
+		return err
+	}
+	if err := a.ensureNodeProviderID(ctx, machine); err != nil {
 		return err
 	}
 
@@ -595,11 +597,14 @@ func (a *Actuator) clearAnnotation(ctx context.Context, machine *machinev1beta1.
 	return true, a.client.Update(ctx, machine)
 }
 
-// ensureProviderID adds the providerID to the Machine spec, if it does
-// not already exist.  Also sets the corresponding ID on the related
-// Node when it becomes referenced via the Status.NodeRef
-func (a *Actuator) ensureProviderID(ctx context.Context, machine *machinev1beta1.Machine, host *bmh.BareMetalHost) error {
-	providerID := "baremetalhost:///" + host.Namespace + "/" + host.Name
+// providerIDForHost returns a provider ID representing a given BareMetalHost
+func providerIDForHost(host *bmh.BareMetalHost) string {
+	return "baremetalhost:///" + host.Namespace + "/" + host.Name
+}
+
+// ensureMachineProviderID adds the providerID to the Machine spec.
+func (a *Actuator) ensureMachineProviderID(ctx context.Context, machine *machinev1beta1.Machine, host *bmh.BareMetalHost) error {
+	providerID := providerIDForHost(host)
 	existingProviderID := machine.Spec.ProviderID
 	if existingProviderID == nil || *existingProviderID != providerID {
 		log.Printf("Setting ProviderID %s for machine %s.", providerID, machine.Name)
@@ -610,7 +615,12 @@ func (a *Actuator) ensureProviderID(ctx context.Context, machine *machinev1beta1
 			return err
 		}
 	}
+	return nil
+}
 
+// ensureNodeProviderID adds the ProviderID for the Machine to the Node spec
+// when it becomes referenced via the Status.NodeRef.
+func (a *Actuator) ensureNodeProviderID(ctx context.Context, machine *machinev1beta1.Machine) error {
 	node, err := a.getNodeByMachine(ctx, machine)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -620,6 +630,11 @@ func (a *Actuator) ensureProviderID(ctx context.Context, machine *machinev1beta1
 		log.Printf("Failed to get Node for ProviderID, error: %s", err.Error())
 		return err
 	}
+
+	if machine.Spec.ProviderID == nil {
+		return fmt.Errorf("Cannot set Node ProviderID - Machine ProviderID not available")
+	}
+	providerID := *machine.Spec.ProviderID
 
 	log.Printf("Setting ProviderID %s for node %s.", providerID, node.Name)
 	node.Spec.ProviderID = providerID

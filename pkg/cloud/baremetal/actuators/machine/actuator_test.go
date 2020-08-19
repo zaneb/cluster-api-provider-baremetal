@@ -837,7 +837,7 @@ func TestEnsureProviderID(t *testing.T) {
 			t.Error(err)
 		}
 
-		err = actuator.ensureProviderID(context.TODO(), &tc.Machine, &tc.Host)
+		err = actuator.ensureMachineProviderID(context.TODO(), &tc.Machine, &tc.Host)
 		if err != nil {
 			t.Errorf("unexpected error %v", err)
 		}
@@ -859,6 +859,11 @@ func TestEnsureProviderID(t *testing.T) {
 				*providerID, expectedProviderID)
 		}
 		if tc.Node.Name != "" {
+			err = actuator.ensureNodeProviderID(context.TODO(), &tc.Machine)
+			if err != nil {
+				t.Errorf("unexpected error %v", err)
+			}
+
 			node := &corev1.Node{}
 			nodeKey := client.ObjectKey{
 				Name:      tc.Node.Name,
