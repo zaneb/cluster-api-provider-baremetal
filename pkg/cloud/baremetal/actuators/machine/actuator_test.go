@@ -20,6 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	fakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/yaml"
@@ -780,6 +781,8 @@ func TestEnsureProviderID(t *testing.T) {
 
 	c := fakeclient.NewFakeClientWithScheme(scheme)
 
+	uid := uuid.NewUUID()
+
 	testCases := []struct {
 		Machine machinev1beta1.Machine
 		Host    bmh.BareMetalHost
@@ -796,6 +799,7 @@ func TestEnsureProviderID(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "myhost",
 					Namespace: "myns",
+					UID:       uid,
 				},
 			},
 		},
@@ -817,6 +821,7 @@ func TestEnsureProviderID(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "myhost2",
 					Namespace: "myns2",
+					UID:       uid,
 				},
 			},
 			Node: corev1.Node{
@@ -855,7 +860,7 @@ func TestEnsureProviderID(t *testing.T) {
 		if providerID == nil {
 			t.Error("no machine.Spec.ProviderID found")
 		}
-		expectedProviderID := "baremetalhost:///" + tc.Host.Namespace + "/" + tc.Host.Name
+		expectedProviderID := "baremetalhost:///" + tc.Host.Namespace + "/" + tc.Host.Name + "/" + string(uid)
 		if *providerID != expectedProviderID {
 			t.Errorf("ProviderID has value %s, expected %s",
 				*providerID, expectedProviderID)

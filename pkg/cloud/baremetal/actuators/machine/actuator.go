@@ -37,6 +37,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
@@ -341,7 +342,7 @@ func (a *Actuator) GetKubeConfig(controlPlaneMachine *machinev1beta1.Machine) (s
 	return "", fmt.Errorf("TODO: Not yet implemented")
 }
 
-func getHostKey(ctx context.Context, machine *machinev1beta1.Machine) (provider string, key *client.ObjectKey, err error) {
+func getHostKey(ctx context.Context, machine *machinev1beta1.Machine) (provider string, key *client.ObjectKey, uid *types.UID, err error) {
 	if machine.Spec.ProviderID != nil {
 		provider = *machine.Spec.ProviderID
 	}
@@ -375,7 +376,12 @@ func getHostKey(ctx context.Context, machine *machinev1beta1.Machine) (provider 
 		return
 	}
 	fields := strings.Split(provider[len(prefix):], "/")
-	if len(fields) != 2 {
+	switch len(fields) {
+	case 2:
+	case 3:
+		uidField := types.UID(fields[2])
+		uid = &uidField
+	default:
 		err = fmt.Errorf("ProviderID value %v in unknown format", provider)
 		return
 	}
@@ -391,7 +397,7 @@ func getHostKey(ctx context.Context, machine *machinev1beta1.Machine) (provider 
 // that contains a reference to the host. Returns nil if not found. Assumes the
 // host is in the same namespace as the machine.
 func (a *Actuator) getHost(ctx context.Context, machine *machinev1beta1.Machine) (*bmh.BareMetalHost, error) {
-	provider, key, err := getHostKey(ctx, machine)
+	provider, key, uid, err := getHostKey(ctx, machine)
 	if err != nil {
 		log.Printf("Failed to get Host key: %v", err)
 		return nil, err
@@ -407,6 +413,9 @@ func (a *Actuator) getHost(ctx context.Context, machine *machinev1beta1.Machine)
 		return nil, nil
 	} else if err != nil {
 		return nil, err
+	} else if uid != nil && host.UID != *uid {
+		// Host object has been replaced by a new one
+		return nil, nil
 	}
 	return &host, nil
 }
@@ -677,20 +686,22 @@ func (a *Actuator) clearAnnotation(ctx context.Context, machine *machinev1beta1.
 
 // providerIDForHost returns a provider ID representing a given BareMetalHost
 func providerIDForHost(host *bmh.BareMetalHost) string {
-	return "baremetalhost:///" + host.Namespace + "/" + host.Name
+	return fmt.Sprintf("baremetalhost:///%s/%s/%s",
+		host.Namespace, host.Name, host.UID)
 }
 
 // ensureMachineProviderID adds the providerID to the Machine spec.
 func (a *Actuator) ensureMachineProviderID(ctx context.Context, machine *machinev1beta1.Machine, host *bmh.BareMetalHost) error {
-	providerID := providerIDForHost(host)
 	existingProviderID := machine.Spec.ProviderID
-	if existingProviderID == nil || *existingProviderID != providerID {
+	// Node provider IDs are immutable, so don't modify an existing provider ID
+	if existingProviderID == nil || *existingProviderID == "" {
+		providerID := providerIDForHost(host)
 		log.Printf("Setting ProviderID %s for machine %s.", providerID, machine.Name)
 		machine.Spec.ProviderID = &providerID
 		err := a.client.Update(ctx, machine)
 		if err != nil {
-			log.Printf("Failed to update machine ProviderID, error: %s", err.Error())
-			return err
+			log.Printf("Failed to set machine ProviderID, error: %s", err.Error())
+			return gherrors.Wrap(err, "failed to set machine provider id")
 		}
 		return &machineapierrors.RequeueAfterError{}
 	}
@@ -721,7 +732,7 @@ func (a *Actuator) ensureNodeProviderID(ctx context.Context, machine *machinev1b
 		err = a.client.Update(ctx, node)
 		if err != nil {
 			log.Printf("Failed to update node ProviderID, error: %s", err.Error())
-			return err
+			return gherrors.Wrap(err, "failed to set node provider id")
 		}
 		return &machineapierrors.RequeueAfterError{}
 	}
