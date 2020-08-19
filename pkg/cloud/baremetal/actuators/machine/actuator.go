@@ -636,12 +636,14 @@ func (a *Actuator) ensureNodeProviderID(ctx context.Context, machine *machinev1b
 	}
 	providerID := *machine.Spec.ProviderID
 
-	log.Printf("Setting ProviderID %s for node %s.", providerID, node.Name)
-	node.Spec.ProviderID = providerID
-	err = a.client.Update(ctx, node)
-	if err != nil {
-		log.Printf("Failed to update node ProviderID, error: %s", err.Error())
-		return err
+	if node.Spec.ProviderID != providerID {
+		log.Printf("Setting ProviderID %s for node %s.", providerID, node.Name)
+		node.Spec.ProviderID = providerID
+		err = a.client.Update(ctx, node)
+		if err != nil {
+			log.Printf("Failed to update node ProviderID, error: %s", err.Error())
+			return err
+		}
 	}
 
 	return nil
