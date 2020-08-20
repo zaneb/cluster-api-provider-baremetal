@@ -4,12 +4,14 @@ approvers:
   - dhellmann
   - mhrivnak
   - hardys
+  - zaneb
 # review == this code is good /lgtm
 reviewers:
   - russellb
   - dhellmann
   - mhrivnak
   - hardys
+  - zaneb
 
 # Bugzilla Information
 component: "Bare Metal Hardware Provisioning"
