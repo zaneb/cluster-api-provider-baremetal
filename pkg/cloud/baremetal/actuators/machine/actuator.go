@@ -330,6 +330,13 @@ func (a *Actuator) Exists(ctx context.Context, machine *machinev1beta1.Machine) 
 		log.Printf("Machine %v does not exist.", machine.Name)
 		return false, nil
 	}
+
+	if !consumerRefMatches(host.Spec.ConsumerRef, machine) {
+		log.Printf("Machine %v does not have provisioned Host (%v is owned by %v).",
+			machine.Name, host.Name, host.Spec.ConsumerRef)
+		return false, nil
+	}
+
 	log.Printf("Machine %v exists.", machine.Name)
 	return true, nil
 }
@@ -350,32 +357,69 @@ func (a *Actuator) GetKubeConfig(controlPlaneMachine *machinev1beta1.Machine) (s
 	return "", fmt.Errorf("TODO: Not yet implemented")
 }
 
+func getHostKey(ctx context.Context, machine *machinev1beta1.Machine) (provider string, key *client.ObjectKey, err error) {
+	if machine.Spec.ProviderID != nil {
+		provider = *machine.Spec.ProviderID
+	}
+	if provider == "" {
+		// No provider ID, so try to get it from the annotation
+		annotations := machine.ObjectMeta.GetAnnotations()
+		if annotations == nil {
+			return
+		}
+		if annotation, ok := annotations[HostAnnotation]; ok {
+			provider = annotation
+		} else {
+			return
+		}
+		hostNamespace, hostName, parseErr := cache.SplitMetaNamespaceKey(provider)
+		if parseErr != nil {
+			log.Printf("Error parsing annotation value \"%s\": %v", provider, parseErr)
+			err = parseErr
+			return
+		}
+		key = &client.ObjectKey{
+			Namespace: hostNamespace,
+			Name:      hostName,
+		}
+		return
+	}
+
+	prefix := "baremetalhost:///"
+	if !strings.HasPrefix(provider, prefix) {
+		err = fmt.Errorf("ProviderID value %v is not a baremetalhost", provider)
+		return
+	}
+	fields := strings.Split(provider[len(prefix):], "/")
+	if len(fields) != 2 {
+		err = fmt.Errorf("ProviderID value %v in unknown format", provider)
+		return
+	}
+	key = &client.ObjectKey{
+		Namespace: fields[0],
+		Name:      fields[1],
+	}
+
+	return
+}
+
 // getHost gets the associated host by looking for an annotation on the machine
 // that contains a reference to the host. Returns nil if not found. Assumes the
 // host is in the same namespace as the machine.
 func (a *Actuator) getHost(ctx context.Context, machine *machinev1beta1.Machine) (*bmh.BareMetalHost, error) {
-	annotations := machine.ObjectMeta.GetAnnotations()
-	if annotations == nil {
-		return nil, nil
-	}
-	hostKey, ok := annotations[HostAnnotation]
-	if !ok {
-		return nil, nil
-	}
-	hostNamespace, hostName, err := cache.SplitMetaNamespaceKey(hostKey)
+	provider, key, err := getHostKey(ctx, machine)
 	if err != nil {
-		log.Printf("Error parsing annotation value \"%s\": %v", hostKey, err)
+		log.Printf("Failed to get Host key: %v", err)
 		return nil, err
+	}
+	if key == nil {
+		return nil, nil
 	}
 
 	host := bmh.BareMetalHost{}
-	key := client.ObjectKey{
-		Name:      hostName,
-		Namespace: hostNamespace,
-	}
-	err = a.client.Get(ctx, key, &host)
+	err = a.client.Get(ctx, *key, &host)
 	if errors.IsNotFound(err) {
-		log.Printf("Annotated host %s not found", hostKey)
+		log.Printf("Linked host %s not found", provider)
 		return nil, nil
 	} else if err != nil {
 		return nil, err

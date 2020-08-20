@@ -642,6 +642,9 @@ func TestExists(t *testing.T) {
 			Name:      "somehost",
 			Namespace: "myns",
 		},
+		Spec: bmh.BareMetalHostSpec{
+			ConsumerRef: &corev1.ObjectReference{},
+		},
 	}
 	c := fakeclient.NewFakeClientWithScheme(scheme, &host)
 
@@ -1830,6 +1833,10 @@ func TestDeleteOfBareMetalHostDeletesMachine(t *testing.T) {
 				},
 			},
 			Machine: &machinev1beta1.Machine{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "Machine",
+					APIVersion: machinev1beta1.SchemeGroupVersion.String(),
+				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "mymachine1",
 					Namespace: "myns",
