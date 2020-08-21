@@ -151,6 +151,11 @@ func (a *Actuator) Create(ctx context.Context, machine *machinev1beta1.Machine) 
 // Delete deletes a machine and is invoked by the Machine Controller
 func (a *Actuator) Delete(ctx context.Context, machine *machinev1beta1.Machine) error {
 	log.Printf("Deleting machine %v .", machine.Name)
+
+	if err := a.removeNodeFinalizer(ctx, machine); err != nil {
+		return err
+	}
+
 	host, err := a.getHost(ctx, machine)
 	if err != nil {
 		return err
@@ -159,10 +164,6 @@ func (a *Actuator) Delete(ctx context.Context, machine *machinev1beta1.Machine) 
 	if host == nil {
 		log.Printf("finished deleting machine %v.", machine.Name)
 		return nil
-	}
-
-	if err := a.removeNodeFinalizer(ctx, machine); err != nil {
-		return err
 	}
 
 	log.Printf("deleting machine %v using host %v", machine.Name, host.Name)
@@ -219,40 +220,9 @@ func (a *Actuator) Update(ctx context.Context, machine *machinev1beta1.Machine) 
 		return err
 	}
 	if host == nil {
-		// When finalizer for BHM is removed but an error occur before
-		// the Machine is deleted below in the StateDeleting block, the
-		// Machine should be deleted when no host is found.
-		log.Print("Deleting machine whose associated host is gone: ", machine.Name)
-		err = a.client.Delete(ctx, machine)
-		if err != nil && !errors.IsNotFound(err) {
-			return err
-		}
-		log.Print("Deleted machine whose associated host is gone: ", machine.Name)
+		// If Host existed when we called Exists(), but not any more, return
+		// an error so that Exists() can return false on the next reconcile.
 		return fmt.Errorf("host not found for machine %s", machine.Name)
-	}
-
-	// Delete Machine when BareMetalHost is deleted.
-	// This is to ensure the MachineSet creates a new Machine
-	// containing the latest ProviderSpec.
-	if host.Status.Provisioning.State == bmh.StateDeleting {
-		if utils.StringInList(host.Finalizers, machinev1beta1.MachineFinalizer) {
-			log.Print("Removing finalizer for host: ", host.Name)
-			host.Finalizers = utils.FilterStringFromList(
-				host.Finalizers, machinev1beta1.MachineFinalizer)
-			err = a.client.Update(ctx, host)
-			if err != nil && !errors.IsNotFound(err) {
-				return err
-			}
-			log.Print("Removed finalizer for host: ", host.Name)
-		}
-
-		log.Print("Deleting machine whose associated host is gone: ", machine.Name)
-		err = a.client.Delete(ctx, machine)
-		if err != nil && !errors.IsNotFound(err) {
-			return err
-		}
-		log.Print("Deleted machine whose associated host is gone: ", machine.Name)
-		return nil
 	}
 
 	// Provisioning Phase
@@ -320,11 +290,6 @@ func (a *Actuator) Exists(ctx context.Context, machine *machinev1beta1.Machine) 
 	switch host.Status.Provisioning.State {
 	case bmh.StateProvisioned, bmh.StateExternallyProvisioned:
 		log.Printf("Machine %v exists.", machine.Name)
-		return true, nil
-	case bmh.StateDeleting, bmh.StateDeprovisioning, bmh.StateProvisioningError:
-		// Don't move to failed state while Host is being deleted,
-		// otherwise we won't get the chance to delete the Machine.
-		log.Printf("Machine %v exists but Host is %v.", machine.Name, host.Status.Provisioning.State)
 		return true, nil
 	case bmh.StateRegistering, bmh.StateRegistrationError, bmh.StatePowerManagementError:
 		// This case will no longer need to be handled once the changes proposed
@@ -571,12 +536,6 @@ func (a *Actuator) provisionHost(ctx context.Context, host *bmh.BareMetalHost,
 	config *bmv1alpha1.BareMetalMachineProviderSpec) error {
 	originalHost := host.DeepCopy()
 
-	// Add a finalizer for the BMH. This will allow us to delete
-	// the Machine when the BMH is deleted.
-	if !utils.StringInList(host.Finalizers, machinev1beta1.MachineFinalizer) {
-		host.Finalizers = append(host.Finalizers, machinev1beta1.MachineFinalizer)
-	}
-
 	// We only want to update the image setting if the host does not
 	// already have an image.
 	//
@@ -632,6 +591,8 @@ func (a *Actuator) releaseHost(ctx context.Context, host *bmh.BareMetalHost, mac
 			return nil
 		}
 	}
+	// We don't add a finalizer any more, but remove it if present in case it was
+	// added by a previous version of the actuator.
 	if utils.StringInList(host.Finalizers, machinev1beta1.MachineFinalizer) {
 		log.Printf("clearing machine finalizer for host %v", host.Name)
 		host.Finalizers = utils.FilterStringFromList(
