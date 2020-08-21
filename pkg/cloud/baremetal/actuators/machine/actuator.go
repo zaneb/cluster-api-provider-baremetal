@@ -166,6 +166,10 @@ func (a *Actuator) Delete(ctx context.Context, machine *machinev1beta1.Machine) 
 		return nil
 	}
 
+	if err := a.removeNodeFinalizer(ctx, machine); err != nil {
+		return err
+	}
+
 	log.Printf("deleting machine %v using host %v", machine.Name, host.Name)
 
 	if host.Spec.ConsumerRef == nil {
@@ -661,6 +665,29 @@ func (a *Actuator) handleNodeFinalizer(ctx context.Context, machine *machinev1be
 			}
 		}
 	}
+	return nil
+}
+
+// removeNodeFinalizer removes the finalizer from the Node
+func (a *Actuator) removeNodeFinalizer(ctx context.Context, machine *machinev1beta1.Machine) error {
+	node, err := a.getNodeByMachine(ctx, machine)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+
+		log.Printf("Failed to find node associated with Machine %s, error: %s", machine.Name, err.Error())
+		return err
+	}
+
+	if utils.StringInList(node.Finalizers, nodeFinalizer) {
+		node.Finalizers = utils.FilterStringFromList(node.Finalizers, nodeFinalizer)
+		if err := a.client.Update(ctx, node); err != nil {
+			log.Printf("Failed to remove Node finalizer from %s, error: %s", node.Name, err.Error())
+			return err
+		}
+	}
+
 	return nil
 }
 
