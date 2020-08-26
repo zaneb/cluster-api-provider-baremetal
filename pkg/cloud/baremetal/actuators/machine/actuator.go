@@ -114,7 +114,16 @@ func (a *Actuator) Create(ctx context.Context, machine *machinev1beta1.Machine) 
 			return err
 		}
 		if host == nil {
-			log.Printf("No available host found. Requeuing.")
+			errorReason := machinev1beta1.InsufficientResourcesMachineError
+			msg := "No available BareMetalHost found"
+			log.Printf("%s", msg)
+			if machine.Status.ErrorReason == nil || *machine.Status.ErrorReason != errorReason {
+				machine.Status.ErrorReason = &errorReason
+				machine.Status.ErrorMessage = &msg
+				if err := a.client.Status().Update(ctx, machine); err != nil {
+					return gherrors.Wrap(err, "failed to set insufficient resources error")
+				}
+			}
 			return &machineapierrors.RequeueAfterError{RequeueAfter: requeueAfter}
 		}
 		log.Printf("Associating machine %s with host %s", machine.Name, host.Name)
@@ -126,7 +135,13 @@ func (a *Actuator) Create(ctx context.Context, machine *machinev1beta1.Machine) 
 		return err
 	}
 
-	if _, err := a.ensureAnnotation(ctx, machine, host); err != nil {
+	if dirty, err := a.ensureAnnotation(ctx, machine, host); err != nil {
+		return err
+	} else if dirty {
+		return &machineapierrors.RequeueAfterError{}
+	}
+
+	if err := a.clearInsufficientResourcesError(ctx, machine); err != nil {
 		return err
 	}
 
@@ -796,18 +811,20 @@ func (a *Actuator) setError(ctx context.Context, machine *machinev1beta1.Machine
 	return a.client.Status().Update(ctx, machine)
 }
 
-// clearError removes the ErrorMessage from the machine's Status if set. Returns
-// nil if ErrorMessage was already nil. Returns a RequeueAfterError if the
-// machine was updated.
-func (a *Actuator) clearError(ctx context.Context, machine *machinev1beta1.Machine) error {
-	if machine.Status.ErrorMessage != nil || machine.Status.ErrorReason != nil {
+// clearInsufficientResourcesError removes the ErrorMessage from the machine's
+// Status if an InsufficientResources error is set. Returns nil if ErrorMessage
+// was already nil. Returns a RequeueAfterError if the machine was updated.
+func (a *Actuator) clearInsufficientResourcesError(ctx context.Context, machine *machinev1beta1.Machine) error {
+	if machine.Status.ErrorReason != nil && *machine.Status.ErrorReason == machinev1beta1.InsufficientResourcesMachineError {
+		now := metav1.Now()
+		machine.Status.LastUpdated = &now // Restart the clock for MachineHealthCheck
 		machine.Status.ErrorMessage = nil
 		machine.Status.ErrorReason = nil
+		log.Printf("Clearing insufficient resources error from machine %s", machine.Name)
 		err := a.client.Status().Update(ctx, machine)
 		if err != nil {
-			return err
+			return gherrors.Wrap(err, "failed to clear machine error")
 		}
-		log.Printf("Cleared error message from machine %s", machine.Name)
 		return &machineapierrors.RequeueAfterError{}
 	}
 	return nil
