@@ -12,7 +12,9 @@ all: test manager
 # Run tests
 test: generate fmt vet unit
 
-unit: manifests
+unit: manifests unit-test
+
+unit-test:
 	go test ./pkg/... ./cmd/... -coverprofile cover.out
 
 # Run against the configured Kubernetes cluster in ~/.kube/config
