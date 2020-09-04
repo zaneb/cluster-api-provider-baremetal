@@ -446,7 +446,7 @@ func TestChooseHost(t *testing.T) {
 	}
 }
 
-func TestSetHostSpec(t *testing.T) {
+func TestProvisionHost(t *testing.T) {
 	for _, tc := range []struct {
 		Scenario                  string
 		UserDataNamespace         string
@@ -571,7 +571,7 @@ func TestSetHostSpec(t *testing.T) {
 			}
 
 			// run the function
-			err = actuator.setHostSpec(context.TODO(), &tc.Host, &machine, config)
+			err = actuator.provisionHost(context.TODO(), &tc.Host, &machine, config)
 			if err != nil {
 				t.Errorf("%v", err)
 				return

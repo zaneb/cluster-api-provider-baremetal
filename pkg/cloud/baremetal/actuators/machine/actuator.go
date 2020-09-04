@@ -126,14 +126,7 @@ func (a *Actuator) Create(ctx context.Context, machine *machinev1beta1.Machine) 
 		log.Printf("Machine %s already associated with host %s", machine.Name, host.Name)
 	}
 
-	// Add a finalizer for the BMH. This will allow us to delete
-	// the Machine when the BMH is deleted.
-	if !utils.StringInList(host.Finalizers, machinev1beta1.MachineFinalizer) {
-		host.Finalizers = append(host.Finalizers, machinev1beta1.MachineFinalizer)
-	}
-
-	err = a.setHostSpec(ctx, host, machine, config)
-	if err != nil {
+	if err := a.provisionHost(ctx, host, machine, config); err != nil {
 		return err
 	}
 
@@ -202,7 +195,7 @@ func (a *Actuator) Delete(ctx context.Context, machine *machinev1beta1.Machine) 
 		host.Spec.UserData = nil
 		err = a.client.Update(ctx, host)
 		if err != nil && !errors.IsNotFound(err) {
-			return err
+			return gherrors.Wrap(err, "failed to deprovision host")
 		}
 		return &machineapierrors.RequeueAfterError{}
 	}
@@ -555,11 +548,18 @@ func consumerRefMatches(consumer *corev1.ObjectReference, machine *machinev1beta
 	return true
 }
 
-// setHostSpec will ensure the host's Spec is set according to the machine's
-// details. It will then update the host via the kube API. If UserData does not
-// include a Namespace, it will default to the Machine's namespace.
-func (a *Actuator) setHostSpec(ctx context.Context, host *bmh.BareMetalHost, machine *machinev1beta1.Machine,
+// provisionHost claims the BareMetalHost for this Machine and provisions it
+// according to the ProviderSpec.
+func (a *Actuator) provisionHost(ctx context.Context, host *bmh.BareMetalHost,
+	machine *machinev1beta1.Machine,
 	config *bmv1alpha1.BareMetalMachineProviderSpec) error {
+	originalHost := host.DeepCopy()
+
+	// Add a finalizer for the BMH. This will allow us to delete
+	// the Machine when the BMH is deleted.
+	if !utils.StringInList(host.Finalizers, machinev1beta1.MachineFinalizer) {
+		host.Finalizers = append(host.Finalizers, machinev1beta1.MachineFinalizer)
+	}
 
 	// We only want to update the image setting if the host does not
 	// already have an image.
@@ -573,6 +573,9 @@ func (a *Actuator) setHostSpec(ctx context.Context, host *bmh.BareMetalHost, mac
 			Checksum: config.Image.Checksum,
 		}
 		host.Spec.UserData = config.UserData
+
+		// If UserData does not include a Namespace, default to the Machine's
+		// namespace.
 		if host.Spec.UserData != nil && host.Spec.UserData.Namespace == "" {
 			host.Spec.UserData.Namespace = machine.Namespace
 		}
@@ -586,7 +589,14 @@ func (a *Actuator) setHostSpec(ctx context.Context, host *bmh.BareMetalHost, mac
 	}
 
 	host.Spec.Online = true
-	return a.client.Update(ctx, host)
+
+	if equality.Semantic.DeepEqual(originalHost, host) {
+		return nil
+	}
+	if err := a.client.Update(ctx, host); err != nil {
+		return gherrors.Wrap(err, "failed to provision host")
+	}
+	return nil
 }
 
 // ensureAnnotation makes sure the machine has an annotation that references the
