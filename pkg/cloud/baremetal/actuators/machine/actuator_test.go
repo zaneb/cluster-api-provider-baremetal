@@ -2,6 +2,7 @@ package machine
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -2009,7 +2010,6 @@ func TestRemediation(t *testing.T) {
 	//starting test with machine that needs remediation
 	machine.Annotations = make(map[string]string)
 	machine.Annotations[HostAnnotation] = host.Namespace + "/" + host.Name
-	machine.Annotations[externalRemediationAnnotation] = ""
 
 	scheme := runtime.NewScheme()
 	machinev1beta1.AddToScheme(scheme)
@@ -2028,6 +2028,18 @@ func TestRemediation(t *testing.T) {
 	c.Create(context.TODO(), machine)
 	c.Create(context.TODO(), host)
 	c.Create(context.TODO(), node)
+
+	err = updateUntilDone(actuator, machine)
+	if err != nil {
+		t.Errorf("unexpected error %v", err)
+	}
+
+	machine = &machinev1beta1.Machine{}
+	c.Get(context.TODO(), machineNamespacedName, machine)
+	machine.Annotations[externalRemediationAnnotation] = ""
+	c.Update(context.TODO(), machine)
+	machine = &machinev1beta1.Machine{}
+	c.Get(context.TODO(), machineNamespacedName, machine)
 
 	err = actuator.Update(context.TODO(), machine)
 	if err != nil {
@@ -2064,16 +2076,7 @@ func TestRemediation(t *testing.T) {
 	machine = &machinev1beta1.Machine{}
 	c.Get(context.TODO(), machineNamespacedName, machine)
 	err = actuator.Update(context.TODO(), machine)
-	if err == nil {
-		t.Errorf("expected a requeue err but err was nil")
-	} else {
-		switch err.(type) {
-		case *machineapierrors.RequeueAfterError:
-			break
-		default:
-			t.Errorf("unexpected error %v", err)
-		}
-	}
+	expectRequeueAfterError(err, t)
 
 	node = &corev1.Node{}
 	err = c.Get(context.TODO(), nodeNamespacedName, node)
@@ -2092,7 +2095,7 @@ func TestRemediation(t *testing.T) {
 	c.Create(context.TODO(), nodeBackup)
 
 	err = actuator.Update(context.TODO(), machine)
-	expectRequetAfterError(err, t)
+	expectRequeueAfterError(err, t)
 	node = &corev1.Node{}
 	c.Get(context.TODO(), nodeNamespacedName, node)
 
@@ -2182,7 +2185,7 @@ func TestRemediation(t *testing.T) {
 	}
 }
 
-func expectRequetAfterError(err error, t *testing.T) {
+func expectRequeueAfterError(err error, t *testing.T) {
 	if err == nil {
 		t.Errorf("expected a requeue err but err was nil")
 	} else {
@@ -2193,6 +2196,17 @@ func expectRequetAfterError(err error, t *testing.T) {
 			t.Errorf("unexpected error %v", err)
 		}
 	}
+}
+
+func updateUntilDone(actuator *Actuator, machine *machinev1beta1.Machine) error {
+	attempts := 5
+	for i := 0; i < attempts; i++ {
+		err := actuator.Update(context.TODO(), machine)
+		if _, isRequeue := err.(*machineapierrors.RequeueAfterError); !isRequeue {
+			return err
+		}
+	}
+	return fmt.Errorf("Update() did not converge within %d attempts", attempts)
 }
 
 func getNode(name string) (*corev1.Node, types.NamespacedName) {
