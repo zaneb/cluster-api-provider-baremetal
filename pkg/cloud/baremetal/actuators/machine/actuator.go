@@ -81,9 +81,11 @@ func NewActuator(params ActuatorParams) (*Actuator, error) {
 	}, nil
 }
 
-// Create creates a machine and is invoked by the Machine Controller
+// Create creates a machine and is invoked by the Machine Controller.
+// This will be called (in preference to Update()) when Exists() returns false,
+// provided that the Machine has not yet reached the Provisioned phase.
 func (a *Actuator) Create(ctx context.Context, machine *machinev1beta1.Machine) error {
-	log.Printf("Creating machine %v .", machine.Name)
+	log.Printf("Creating machine %v", machine.Name)
 
 	// load and validate the config
 	if machine.Spec.ProviderSpec.Value == nil {
@@ -130,20 +132,11 @@ func (a *Actuator) Create(ctx context.Context, machine *machinev1beta1.Machine) 
 		return err
 	}
 
-	_, err = a.ensureAnnotation(ctx, machine, host)
-	if err != nil {
+	if _, err := a.ensureAnnotation(ctx, machine, host); err != nil {
 		return err
 	}
 
-	if err := a.handleNodeFinalizer(ctx, machine); err != nil {
-		return err
-	}
-
-	if err := a.updateMachineStatus(ctx, machine, host); err != nil {
-		return err
-	}
-
-	log.Printf("Finished creating machine %v .", machine.Name)
+	log.Printf("Finished creating machine %v", machine.Name)
 	return nil
 }
 
