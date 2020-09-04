@@ -842,9 +842,7 @@ func TestEnsureProviderID(t *testing.T) {
 		}
 
 		err = actuator.ensureMachineProviderID(context.TODO(), &tc.Machine, &tc.Host)
-		if err != nil {
-			t.Errorf("unexpected error %v", err)
-		}
+		expectRequeueAfterError(err, t)
 
 		// get the machine and make sure it has the correct ProviderID
 		machine := machinev1beta1.Machine{}
@@ -864,9 +862,7 @@ func TestEnsureProviderID(t *testing.T) {
 		}
 		if tc.Node.Name != "" {
 			err = actuator.ensureNodeProviderID(context.TODO(), &tc.Machine)
-			if err != nil {
-				t.Errorf("unexpected error %v", err)
-			}
+			expectRequeueAfterError(err, t)
 
 			node := &corev1.Node{}
 			nodeKey := client.ObjectKey{
@@ -1461,7 +1457,7 @@ func newConfig(t *testing.T, UserDataNamespace string, labels map[string]string,
 	}
 }
 
-func TestUpdateMachineStatus(t *testing.T) {
+func TestEnsureMachineAddresses(t *testing.T) {
 	scheme := runtime.NewScheme()
 	machinev1beta1.AddToScheme(scheme)
 
@@ -1477,6 +1473,7 @@ func TestUpdateMachineStatus(t *testing.T) {
 		Host            *bmh.BareMetalHost
 		Machine         *machinev1beta1.Machine
 		ExpectedMachine machinev1beta1.Machine
+		Changed         bool
 	}{
 		{
 			// machine status updated
@@ -1508,6 +1505,7 @@ func TestUpdateMachineStatus(t *testing.T) {
 					},
 				},
 			},
+			Changed: true,
 		},
 		{
 			// machine status unchanged
@@ -1550,6 +1548,7 @@ func TestUpdateMachineStatus(t *testing.T) {
 					},
 				},
 			},
+			Changed: false,
 		},
 		{
 			// machine status unchanged
@@ -1564,6 +1563,7 @@ func TestUpdateMachineStatus(t *testing.T) {
 			ExpectedMachine: machinev1beta1.Machine{
 				Status: machinev1beta1.MachineStatus{},
 			},
+			Changed: false,
 		},
 	}
 
@@ -1579,9 +1579,13 @@ func TestUpdateMachineStatus(t *testing.T) {
 			t.Error(err)
 		}
 
-		err = actuator.updateMachineStatus(context.TODO(), tc.Machine, tc.Host)
-		if err != nil {
-			t.Errorf("unexpected error %v", err)
+		err = actuator.ensureMachineAddresses(context.TODO(), tc.Machine, tc.Host)
+		if tc.Changed {
+			expectRequeueAfterError(err, t)
+		} else {
+			if err != nil {
+				t.Errorf("unexpected error %v", err)
+			}
 		}
 		key := client.ObjectKey{
 			Name:      tc.Machine.Name,
@@ -1627,6 +1631,7 @@ func TestApplyMachineStatus(t *testing.T) {
 		Machine               *machinev1beta1.Machine
 		Addresses             []corev1.NodeAddress
 		ExpectedNodeAddresses []corev1.NodeAddress
+		Changed               bool
 	}{
 		{
 			// Machine status updated
@@ -1641,6 +1646,7 @@ func TestApplyMachineStatus(t *testing.T) {
 			},
 			Addresses:             []corev1.NodeAddress{addr1, addr2},
 			ExpectedNodeAddresses: []corev1.NodeAddress{addr1, addr2},
+			Changed:               true,
 		},
 		{
 			// Machine status unchanged
@@ -1655,6 +1661,7 @@ func TestApplyMachineStatus(t *testing.T) {
 			},
 			Addresses:             []corev1.NodeAddress{addr1, addr2},
 			ExpectedNodeAddresses: []corev1.NodeAddress{addr1, addr2},
+			Changed:               false,
 		},
 	}
 
@@ -1671,8 +1678,12 @@ func TestApplyMachineStatus(t *testing.T) {
 		}
 
 		err = actuator.applyMachineStatus(context.TODO(), tc.Machine, tc.Addresses)
-		if err != nil {
-			t.Errorf("unexpected error %v", err)
+		if tc.Changed {
+			expectRequeueAfterError(err, t)
+		} else {
+			if err != nil {
+				t.Errorf("unexpected error %v", err)
+			}
 		}
 
 		key := client.ObjectKey{
@@ -1900,7 +1911,7 @@ func TestDeleteOfBareMetalHostDeletesMachine(t *testing.T) {
 			t.Error(err)
 		}
 
-		err = actuator.Update(context.TODO(), tc.Machine)
+		err = updateUntilDone(actuator, tc.Machine)
 		if err != nil {
 			t.Errorf("unexpected error %v", err)
 		}
@@ -2129,7 +2140,7 @@ func TestRemediation(t *testing.T) {
 	machine = &machinev1beta1.Machine{}
 	c.Get(context.TODO(), machineNamespacedName, machine)
 
-	err = actuator.Update(context.TODO(), machine)
+	err = updateUntilDone(actuator, machine)
 	if err != nil {
 		t.Errorf("unexpected error %v", err)
 	}

@@ -213,6 +213,8 @@ func (a *Actuator) Delete(ctx context.Context, machine *machinev1beta1.Machine) 
 }
 
 // Update updates a machine and is invoked by the Machine Controller
+// This is called when Exists() returns true and the Machine has not failed or been
+// deleted.
 func (a *Actuator) Update(ctx context.Context, machine *machinev1beta1.Machine) error {
 	log.Printf("Updating machine %v .", machine.Name)
 
@@ -264,8 +266,32 @@ func (a *Actuator) Update(ctx context.Context, machine *machinev1beta1.Machine) 
 		return nil
 	}
 
+	// Provisioning Phase
+
+	if err := a.ensureMachineProviderID(ctx, machine, host); err != nil {
+		return err
+	}
+
+	// Provisioned Phase
+
+	if err := a.ensureMachineAddresses(ctx, machine, host); err != nil {
+		return err
+	}
+
+	// Make sure the annotation doesn't get out of sync with the
+	// ProvisioningID, in case we downgrade to an earlier version of CAPBM that
+	// relies on the annotation alone.
 	dirty, err := a.ensureAnnotation(ctx, machine, host)
 	if err != nil {
+		return err
+	}
+	if dirty {
+		return &machineapierrors.RequeueAfterError{}
+	}
+
+	// Running phase
+
+	if err := a.ensureNodeProviderID(ctx, machine); err != nil {
 		return err
 	}
 
@@ -273,20 +299,7 @@ func (a *Actuator) Update(ctx context.Context, machine *machinev1beta1.Machine) 
 		return err
 	}
 
-	if !dirty {
-		if err := a.remediateIfNeeded(ctx, machine, host); err != nil {
-			return err
-		}
-	}
-
-	if err := a.updateMachineStatus(ctx, machine, host); err != nil {
-		return err
-	}
-
-	if err := a.ensureMachineProviderID(ctx, machine, host); err != nil {
-		return err
-	}
-	if err := a.ensureNodeProviderID(ctx, machine); err != nil {
+	if err := a.remediateIfNeeded(ctx, machine, host); err != nil {
 		return err
 	}
 
@@ -684,6 +697,7 @@ func (a *Actuator) ensureMachineProviderID(ctx context.Context, machine *machine
 			log.Printf("Failed to update machine ProviderID, error: %s", err.Error())
 			return err
 		}
+		return &machineapierrors.RequeueAfterError{}
 	}
 	return nil
 }
@@ -714,6 +728,7 @@ func (a *Actuator) ensureNodeProviderID(ctx context.Context, machine *machinev1b
 			log.Printf("Failed to update node ProviderID, error: %s", err.Error())
 			return err
 		}
+		return &machineapierrors.RequeueAfterError{}
 	}
 
 	return nil
@@ -827,8 +842,8 @@ func configFromProviderSpec(providerSpec machinev1beta1.ProviderSpec) (*bmv1alph
 	return &config, nil
 }
 
-// updateMachineStatus updates a machine object's status.
-func (a *Actuator) updateMachineStatus(ctx context.Context, machine *machinev1beta1.Machine, host *bmh.BareMetalHost) error {
+// ensureMachineAddresses updates the Host IP addresses in the Machine status.
+func (a *Actuator) ensureMachineAddresses(ctx context.Context, machine *machinev1beta1.Machine, host *bmh.BareMetalHost) error {
 	addrs, err := a.nodeAddresses(host)
 	if err != nil {
 		return err
@@ -853,8 +868,11 @@ func (a *Actuator) applyMachineStatus(ctx context.Context, machine *machinev1bet
 	now := metav1.Now()
 	machineCopy.Status.LastUpdated = &now
 
-	err := a.client.Status().Update(ctx, machineCopy)
-	return err
+	log.Printf("Updating addresses for machine %s", machine.Name)
+	if err := a.client.Status().Update(ctx, machineCopy); err != nil {
+		return gherrors.Wrap(err, "failed to update machine status")
+	}
+	return &machineapierrors.RequeueAfterError{}
 }
 
 // NodeAddresses returns a slice of corev1.NodeAddress objects for a
