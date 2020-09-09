@@ -168,25 +168,13 @@ func (a *Actuator) Delete(ctx context.Context, machine *machinev1beta1.Machine) 
 	log.Printf("deleting machine %v using host %v", machine.Name, host.Name)
 
 	if host.Spec.ConsumerRef == nil {
-		log.Printf("removing host annotation from machine %v", machine.Name)
-		_, err := a.clearAnnotation(ctx, machine)
-		if err != nil {
-			return err
-		}
-		// updating the machine will re-enqueue it without us asking
 		return a.releaseHost(ctx, host, machine)
 	}
 
-	// don't remove the ConsumerRef if it references some other
-	// machine, but remove the annotation linking this machine to the
-	// host so the current machine can continue deleting
+	// Don't deprovision the Host if it is consumed by some other machine
 	if !consumerRefMatches(host.Spec.ConsumerRef, machine) {
 		log.Printf("host associated with %v, not machine %v.",
 			host.Spec.ConsumerRef.Name, machine.Name)
-		_, err := a.clearAnnotation(ctx, machine)
-		if err != nil {
-			return err
-		}
 		return a.releaseHost(ctx, host, machine)
 	}
 
@@ -329,8 +317,29 @@ func (a *Actuator) Exists(ctx context.Context, machine *machinev1beta1.Machine) 
 		return false, a.clearMachineAddresses(ctx, machine)
 	}
 
-	log.Printf("Machine %v exists.", machine.Name)
-	return true, nil
+	switch host.Status.Provisioning.State {
+	case bmh.StateProvisioned, bmh.StateExternallyProvisioned:
+		log.Printf("Machine %v exists.", machine.Name)
+		return true, nil
+	case bmh.StateDeleting, bmh.StateDeprovisioning, bmh.StateProvisioningError:
+		// Don't move to failed state while Host is being deleted,
+		// otherwise we won't get the chance to delete the Machine.
+		log.Printf("Machine %v exists but Host is %v.", machine.Name, host.Status.Provisioning.State)
+		return true, nil
+	case bmh.StateRegistering, bmh.StateRegistrationError, bmh.StatePowerManagementError:
+		// This case will no longer need to be handled once the changes proposed
+		// in https://github.com/metal3-io/baremetal-operator/pull/388 are
+		// available in the baremetal-operator.
+		log.Printf("Machine %v exists but Host is not manageable.", machine.Name)
+		return true, nil
+	default:
+		log.Printf("Machine %v does not have provisioned Host (%v is %s).",
+			machine.Name, host.Name, host.Status.Provisioning.State)
+		// Clear machine addresses so that a new Node provisioned on a new Host
+		// with the same IP can be linked with its Machine and not get confused
+		// with this one.
+		return false, a.clearMachineAddresses(ctx, machine)
+	}
 }
 
 // The Machine Actuator interface must implement GetIP and GetKubeConfig functions as a workaround for issues
@@ -669,26 +678,6 @@ func (a *Actuator) ensureAnnotation(ctx context.Context, machine *machinev1beta1
 		return gherrors.Wrap(err, "failed to update machine annotation")
 	}
 	return &machineapierrors.RequeueAfterError{}
-}
-
-// clearAnnotation makes sure the machine's host annotation is empty.
-// it returns a boolean to indicate if the machine object was changed
-func (a *Actuator) clearAnnotation(ctx context.Context, machine *machinev1beta1.Machine) (bool, error) {
-
-	annotations := machine.ObjectMeta.GetAnnotations()
-	if annotations == nil {
-		return false, nil
-	}
-
-	_, ok := annotations[HostAnnotation]
-	if !ok {
-		return false, nil
-	}
-
-	log.Printf("clearing host annotation for %v", machine.Name)
-	annotations[HostAnnotation] = ""
-	machine.ObjectMeta.SetAnnotations(annotations)
-	return true, a.client.Update(ctx, machine)
 }
 
 // providerIDForHost returns a provider ID representing a given BareMetalHost

@@ -647,6 +647,11 @@ func TestExists(t *testing.T) {
 		Spec: bmh.BareMetalHostSpec{
 			ConsumerRef: &corev1.ObjectReference{},
 		},
+		Status: bmh.BareMetalHostStatus{
+			Provisioning: bmh.ProvisionStatus{
+				State: bmh.StateProvisioned,
+			},
+		},
 	}
 	c := fakeclient.NewFakeClientWithScheme(scheme, &host)
 
