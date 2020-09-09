@@ -1286,7 +1286,7 @@ func TestDelete(t *testing.T) {
 		},
 
 		{
-			CaseName: "no consumer ref, so this is a no-op",
+			CaseName: "no consumer ref, so remove machine finalizer",
 			Host: &bmh.BareMetalHost{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "myhost",
@@ -1309,7 +1309,7 @@ func TestDelete(t *testing.T) {
 					},
 				},
 			},
-			ExpectHostFinalizer: true,
+			ExpectHostFinalizer: false,
 		},
 
 		{

@@ -172,7 +172,8 @@ func (a *Actuator) Delete(ctx context.Context, machine *machinev1beta1.Machine) 
 		if err != nil {
 			return err
 		}
-		return nil // updating the machine will re-enqueue it without us asking
+		// updating the machine will re-enqueue it without us asking
+		return a.releaseHost(ctx, host, machine)
 	}
 
 	// don't remove the ConsumerRef if it references some other
@@ -185,7 +186,7 @@ func (a *Actuator) Delete(ctx context.Context, machine *machinev1beta1.Machine) 
 		if err != nil {
 			return err
 		}
-		return nil
+		return a.releaseHost(ctx, host, machine)
 	}
 
 	if host.Spec.Image != nil || host.Spec.Online || host.Spec.UserData != nil {
@@ -215,19 +216,7 @@ func (a *Actuator) Delete(ctx context.Context, machine *machinev1beta1.Machine) 
 		return &machineapierrors.RequeueAfterError{RequeueAfter: requeueAfter}
 	}
 
-	log.Printf("clearing consumer reference for host %v", host.Name)
-	host.Spec.ConsumerRef = nil
-	if utils.StringInList(host.Finalizers, machinev1beta1.MachineFinalizer) {
-		log.Printf("clearing machine finalizer for host %v", host.Name)
-		host.Finalizers = utils.FilterStringFromList(
-			host.Finalizers, machinev1beta1.MachineFinalizer)
-	}
-	err = a.client.Update(ctx, host)
-	if err != nil && !errors.IsNotFound(err) {
-		return err
-	}
-
-	return nil
+	return a.releaseHost(ctx, host, machine)
 }
 
 // Update updates a machine and is invoked by the Machine Controller
@@ -595,6 +584,40 @@ func (a *Actuator) provisionHost(ctx context.Context, host *bmh.BareMetalHost,
 	}
 	if err := a.client.Update(ctx, host); err != nil {
 		return gherrors.Wrap(err, "failed to provision host")
+	}
+	return nil
+}
+
+// releaseHost removes the ConsumerRef and the actuator's finalizer from the
+// BareMetalHost.
+func (a *Actuator) releaseHost(ctx context.Context, host *bmh.BareMetalHost, machine *machinev1beta1.Machine) error {
+	dirty := false
+	if consumerRefMatches(host.Spec.ConsumerRef, machine) {
+		log.Printf("clearing consumer reference for host %v", host.Name)
+		host.Spec.ConsumerRef = nil
+		dirty = true
+	} else {
+		if host.Spec.ConsumerRef != nil &&
+			host.Spec.ConsumerRef.Kind == "Machine" &&
+			host.Spec.ConsumerRef.APIVersion == machine.APIVersion {
+			// Host has been claimed by another Machine; leave that one to
+			// remove the finalizer
+			return nil
+		}
+	}
+	if utils.StringInList(host.Finalizers, machinev1beta1.MachineFinalizer) {
+		log.Printf("clearing machine finalizer for host %v", host.Name)
+		host.Finalizers = utils.FilterStringFromList(
+			host.Finalizers, machinev1beta1.MachineFinalizer)
+		dirty = true
+	}
+	if !dirty {
+		return nil
+	}
+
+	err := a.client.Update(ctx, host)
+	if err != nil && !errors.IsNotFound(err) {
+		return gherrors.Wrap(err, "failed to release host")
 	}
 	return nil
 }
