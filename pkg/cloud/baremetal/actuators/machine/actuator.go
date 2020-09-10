@@ -313,13 +313,20 @@ func (a *Actuator) Exists(ctx context.Context, machine *machinev1beta1.Machine) 
 	}
 	if host == nil {
 		log.Printf("Machine %v does not exist.", machine.Name)
-		return false, nil
+
+		// Clear machine addresses so that a new Node provisioned on a new Host
+		// with the same IP can be linked with its Machine and not get confused
+		// with this one.
+		return false, a.clearMachineAddresses(ctx, machine)
 	}
 
 	if !consumerRefMatches(host.Spec.ConsumerRef, machine) {
 		log.Printf("Machine %v does not have provisioned Host (%v is owned by %v).",
 			machine.Name, host.Name, host.Spec.ConsumerRef)
-		return false, nil
+		// Clear machine addresses so that a new Node provisioned on a new Host
+		// with the same IP can be linked with its Machine and not get confused
+		// with this one.
+		return false, a.clearMachineAddresses(ctx, machine)
 	}
 
 	log.Printf("Machine %v exists.", machine.Name)
@@ -848,6 +855,22 @@ func configFromProviderSpec(providerSpec machinev1beta1.ProviderSpec) (*bmv1alph
 	}
 
 	return &config, nil
+}
+
+// clearMachineAddresses clears the Host IP addresses in the Machine status, so
+// that another Host using the same IP can later be used by another Machine.
+func (a *Actuator) clearMachineAddresses(ctx context.Context, machine *machinev1beta1.Machine) error {
+	var err error
+	// If the Machine is already in the process of being deleted (or has no
+	// addresses set), there is no need to clear them.
+	if machine.ObjectMeta.DeletionTimestamp.IsZero() && len(machine.Status.Addresses) > 0 {
+		log.Printf("Clearing addresses for machine %s", machine.Name)
+		err = a.ensureMachineAddresses(ctx, machine, nil)
+		if _, isRequeueAfter := err.(*machineapierrors.RequeueAfterError); isRequeueAfter {
+			err = nil
+		}
+	}
+	return err
 }
 
 // ensureMachineAddresses updates the Host IP addresses in the Machine status.
