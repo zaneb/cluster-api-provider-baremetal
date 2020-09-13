@@ -887,6 +887,8 @@ func TestEnsureAnnotation(t *testing.T) {
 			Scenario: "annotation exists and is correct",
 			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
+					Name:      "mymachine",
+					Namespace: "myns",
 					Annotations: map[string]string{
 						HostAnnotation: "myns/myhost",
 					},
@@ -903,6 +905,8 @@ func TestEnsureAnnotation(t *testing.T) {
 			Scenario: "annotation exists but is wrong",
 			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
+					Name:      "mymachine",
+					Namespace: "myns",
 					Annotations: map[string]string{
 						HostAnnotation: "myns/wrongvalue",
 					},
@@ -919,6 +923,8 @@ func TestEnsureAnnotation(t *testing.T) {
 			Scenario: "annotations are empty",
 			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
+					Name:        "mymachine",
+					Namespace:   "myns",
 					Annotations: map[string]string{},
 				},
 			},
@@ -930,8 +936,13 @@ func TestEnsureAnnotation(t *testing.T) {
 			},
 		},
 		{
-			Machine: machinev1beta1.Machine{},
 			Scenario: "annotations are nil",
+			Machine: machinev1beta1.Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "mymachine",
+					Namespace: "myns",
+				},
+			},
 			Host: bmh.BareMetalHost{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "myhost",
