@@ -879,11 +879,12 @@ func TestEnsureAnnotation(t *testing.T) {
 	machinev1beta1.AddToScheme(scheme)
 
 	testCases := []struct {
-		Machine machinev1beta1.Machine
-		Host    bmh.BareMetalHost
+		Scenario string
+		Machine  machinev1beta1.Machine
+		Host     bmh.BareMetalHost
 	}{
 		{
-			// annotation exists and is correct
+			Scenario: "annotation exists and is correct",
 			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
@@ -899,7 +900,7 @@ func TestEnsureAnnotation(t *testing.T) {
 			},
 		},
 		{
-			// annotation exists but is wrong
+			Scenario: "annotation exists but is wrong",
 			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
@@ -915,7 +916,7 @@ func TestEnsureAnnotation(t *testing.T) {
 			},
 		},
 		{
-			// annotations are empty
+			Scenario: "annotations are empty",
 			Machine: machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{},
@@ -929,8 +930,8 @@ func TestEnsureAnnotation(t *testing.T) {
 			},
 		},
 		{
-			// annotations are nil
 			Machine: machinev1beta1.Machine{},
+			Scenario: "annotations are nil",
 			Host: bmh.BareMetalHost{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "myhost",
@@ -941,37 +942,39 @@ func TestEnsureAnnotation(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		c := fakeclient.NewFakeClientWithScheme(scheme, &tc.Machine)
-		actuator, err := NewActuator(ActuatorParams{
-			Client: c,
+		t.Run(tc.Scenario, func(t *testing.T) {
+			c := fakeclient.NewFakeClientWithScheme(scheme, &tc.Machine)
+			actuator, err := NewActuator(ActuatorParams{
+				Client: c,
+			})
+			if err != nil {
+				t.Error(err)
+			}
+
+			_, err = actuator.ensureAnnotation(context.TODO(), &tc.Machine, &tc.Host)
+			if err != nil {
+				t.Errorf("unexpected error %v", err)
+			}
+
+			// get the machine and make sure it has the correct annotation
+			machine := machinev1beta1.Machine{}
+			key := client.ObjectKey{
+				Name:      tc.Machine.Name,
+				Namespace: tc.Machine.Namespace,
+			}
+			err = c.Get(context.TODO(), key, &machine)
+			annotations := machine.ObjectMeta.GetAnnotations()
+			if annotations == nil {
+				t.Error("no annotations found")
+			}
+			result, ok := annotations[HostAnnotation]
+			if !ok {
+				t.Error("host annotation not found")
+			}
+			if result != "myns/myhost" {
+				t.Errorf("host annotation has value %s, expected \"myns/myhost\"", result)
+			}
 		})
-		if err != nil {
-			t.Error(err)
-		}
-
-		_, err = actuator.ensureAnnotation(context.TODO(), &tc.Machine, &tc.Host)
-		if err != nil {
-			t.Errorf("unexpected error %v", err)
-		}
-
-		// get the machine and make sure it has the correct annotation
-		machine := machinev1beta1.Machine{}
-		key := client.ObjectKey{
-			Name:      tc.Machine.Name,
-			Namespace: tc.Machine.Namespace,
-		}
-		err = c.Get(context.TODO(), key, &machine)
-		annotations := machine.ObjectMeta.GetAnnotations()
-		if annotations == nil {
-			t.Error("no annotations found")
-		}
-		result, ok := annotations[HostAnnotation]
-		if !ok {
-			t.Error("host annotation not found")
-		}
-		if result != "myns/myhost" {
-			t.Errorf("host annotation has value %s, expected \"myns/myhost\"", result)
-		}
 	}
 }
 
