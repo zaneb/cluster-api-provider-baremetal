@@ -30,6 +30,7 @@ import (
 	bmv1alpha1 "github.com/openshift/cluster-api-provider-baremetal/pkg/apis/baremetal/v1alpha1"
 	machinev1beta1 "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
 	machineapierrors "github.com/openshift/machine-api-operator/pkg/controller/machine"
+	gherrors "github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -567,7 +568,11 @@ func (a *Actuator) ensureAnnotation(ctx context.Context, machine *machinev1beta1
 	log.Printf("setting host annotation for %v to %v=%q", machine.Name, HostAnnotation, hostKey)
 	annotations[HostAnnotation] = hostKey
 	machine.ObjectMeta.SetAnnotations(annotations)
-	return true, a.client.Update(ctx, machine)
+	err = a.client.Update(ctx, machine)
+	if err != nil {
+		return false, gherrors.Wrap(err, "failed to update machine annotation")
+	}
+	return true, nil
 }
 
 // clearAnnotation makes sure the machine's host annotation is empty.
