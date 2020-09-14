@@ -101,12 +101,6 @@ func (a *Actuator) Create(ctx context.Context, machine *machinev1beta1.Machine) 
 		return a.setError(ctx, machine, err.Error())
 	}
 
-	// clear an error if one was previously set
-	err = a.clearError(ctx, machine)
-	if err != nil {
-		return err
-	}
-
 	// look for associated BMH
 	host, err := a.getHost(ctx, machine)
 	if err != nil {
@@ -217,13 +211,6 @@ func (a *Actuator) Delete(ctx context.Context, machine *machinev1beta1.Machine) 
 // deleted.
 func (a *Actuator) Update(ctx context.Context, machine *machinev1beta1.Machine) error {
 	log.Printf("Updating machine %v .", machine.Name)
-
-	// clear any error message that was previously set. This method doesn't set
-	// error messages yet, so we know that it's incorrect to have one here.
-	err := a.clearError(ctx, machine)
-	if err != nil {
-		return err
-	}
 
 	host, err := a.getHost(ctx, machine)
 	if err != nil {
