@@ -135,10 +135,8 @@ func (a *Actuator) Create(ctx context.Context, machine *machinev1beta1.Machine) 
 		return err
 	}
 
-	if dirty, err := a.ensureAnnotation(ctx, machine, host); err != nil {
+	if err := a.ensureAnnotation(ctx, machine, host); err != nil {
 		return err
-	} else if dirty {
-		return &machineapierrors.RequeueAfterError{}
 	}
 
 	if err := a.clearInsufficientResourcesError(ctx, machine); err != nil {
@@ -283,12 +281,8 @@ func (a *Actuator) Update(ctx context.Context, machine *machinev1beta1.Machine) 
 	// Make sure the annotation doesn't get out of sync with the
 	// ProvisioningID, in case we downgrade to an earlier version of CAPBM that
 	// relies on the annotation alone.
-	dirty, err := a.ensureAnnotation(ctx, machine, host)
-	if err != nil {
+	if err := a.ensureAnnotation(ctx, machine, host); err != nil {
 		return err
-	}
-	if dirty {
-		return &machineapierrors.RequeueAfterError{}
 	}
 
 	// Running phase
@@ -631,9 +625,9 @@ func (a *Actuator) releaseHost(ctx context.Context, host *bmh.BareMetalHost, mac
 }
 
 // ensureAnnotation makes sure the machine has an annotation that references the
-// host and uses the API to update the machine if necessary.
-// it returns a boolean to indicate if the machine object was changed
-func (a *Actuator) ensureAnnotation(ctx context.Context, machine *machinev1beta1.Machine, host *bmh.BareMetalHost) (bool, error) {
+// host and uses the API to update the machine if necessary. Returns a RequeueAfterError
+// if the Machine is modified.
+func (a *Actuator) ensureAnnotation(ctx context.Context, machine *machinev1beta1.Machine, host *bmh.BareMetalHost) error {
 	annotations := machine.ObjectMeta.GetAnnotations()
 	if annotations == nil {
 		annotations = make(map[string]string)
@@ -642,12 +636,12 @@ func (a *Actuator) ensureAnnotation(ctx context.Context, machine *machinev1beta1
 	hostKey, err := cache.MetaNamespaceKeyFunc(host)
 	if err != nil {
 		log.Printf("Error parsing annotation value \"%s\": %v", hostKey, err)
-		return false, err
+		return err
 	}
 	existing, ok := annotations[HostAnnotation]
 	if ok {
 		if existing == hostKey {
-			return false, nil
+			return nil
 		}
 		log.Printf("Warning: found stray annotation for host %s on machine %s. Overwriting.", existing, machine.Name)
 	}
@@ -655,11 +649,10 @@ func (a *Actuator) ensureAnnotation(ctx context.Context, machine *machinev1beta1
 	log.Printf("setting host annotation for %v to %v=%q", machine.Name, HostAnnotation, hostKey)
 	annotations[HostAnnotation] = hostKey
 	machine.ObjectMeta.SetAnnotations(annotations)
-	err = a.client.Update(ctx, machine)
-	if err != nil {
-		return false, gherrors.Wrap(err, "failed to update machine annotation")
+	if err := a.client.Update(ctx, machine); err != nil {
+		return gherrors.Wrap(err, "failed to update machine annotation")
 	}
-	return true, nil
+	return &machineapierrors.RequeueAfterError{}
 }
 
 // clearAnnotation makes sure the machine's host annotation is empty.

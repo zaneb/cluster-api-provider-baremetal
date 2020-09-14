@@ -967,9 +967,11 @@ func TestEnsureAnnotation(t *testing.T) {
 				t.Error(err)
 			}
 
-			_, err = actuator.ensureAnnotation(context.TODO(), &tc.Machine, &tc.Host)
+			err = actuator.ensureAnnotation(context.TODO(), &tc.Machine, &tc.Host)
 			if err != nil {
-				t.Errorf("unexpected error %v", err)
+				if _, ok := err.(*machineapierrors.RequeueAfterError); !ok {
+					t.Errorf("unexpected error %v", err)
+				}
 			}
 
 			// get the machine and make sure it has the correct annotation
