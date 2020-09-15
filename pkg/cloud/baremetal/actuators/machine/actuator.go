@@ -453,7 +453,10 @@ func (a *Actuator) chooseHost(ctx context.Context, machine *machinev1beta1.Machi
 			// the host is being deleted
 			continue
 		}
-		if host.Status.Provisioning.State != bmh.StateReady {
+		switch host.Status.Provisioning.State {
+		case bmh.StateReady, bmh.StateAvailable:
+			// the host is available to be provisioned
+		default:
 			// the host has not completed introspection or has an error
 			continue
 		}
