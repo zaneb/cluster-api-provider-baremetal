@@ -157,6 +157,11 @@ func (a *Actuator) Create(ctx context.Context, machine *machinev1beta1.Machine) 
 // Delete deletes a machine and is invoked by the Machine Controller
 func (a *Actuator) Delete(ctx context.Context, machine *machinev1beta1.Machine) error {
 	log.Printf("Deleting machine %v .", machine.Name)
+
+	if err := a.removeNodeFinalizer(ctx, machine); err != nil {
+		return err
+	}
+
 	host, err := a.getHost(ctx, machine)
 	if err != nil {
 		return err
@@ -165,10 +170,6 @@ func (a *Actuator) Delete(ctx context.Context, machine *machinev1beta1.Machine) 
 	if host == nil {
 		log.Printf("finished deleting machine %v.", machine.Name)
 		return nil
-	}
-
-	if err := a.removeNodeFinalizer(ctx, machine); err != nil {
-		return err
 	}
 
 	log.Printf("deleting machine %v using host %v", machine.Name, host.Name)
