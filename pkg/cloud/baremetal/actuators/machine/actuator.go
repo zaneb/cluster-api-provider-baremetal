@@ -651,6 +651,11 @@ func (a *Actuator) handleNodeFinalizer(ctx context.Context, machine *machinev1be
 	}
 
 	if node.DeletionTimestamp.IsZero() {
+		// Do not add a finalizer if remediation has not been requested
+		if _, needsRemediation := machine.Annotations[externalRemediationAnnotation]; !needsRemediation {
+			return nil
+		}
+
 		if !utils.StringInList(node.Finalizers, nodeFinalizer) {
 			//add finalizer
 			node.Finalizers = append(node.Finalizers, nodeFinalizer)
@@ -939,7 +944,7 @@ func (a *Actuator) remediateIfNeeded(ctx context.Context, machine *machinev1beta
 	}
 
 	if _, needsRemediation := machine.Annotations[externalRemediationAnnotation]; !needsRemediation {
-		return nil
+		return a.removeNodeFinalizer(ctx, machine)
 	}
 
 	if _, poweredOffForRemediation := machine.Annotations[poweredOffForRemediation]; !poweredOffForRemediation {
