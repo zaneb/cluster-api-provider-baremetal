@@ -142,10 +142,6 @@ func (a *Actuator) Create(ctx context.Context, machine *machinev1beta1.Machine) 
 		return err
 	}
 
-	if err := a.handleNodeFinalizer(ctx, machine); err != nil {
-		return err
-	}
-
 	if err := a.updateMachineStatus(ctx, machine, host); err != nil {
 		return err
 	}
@@ -292,10 +288,6 @@ func (a *Actuator) Update(ctx context.Context, machine *machinev1beta1.Machine) 
 
 	dirty, err := a.ensureAnnotation(ctx, machine, host)
 	if err != nil {
-		return err
-	}
-
-	if err := a.handleNodeFinalizer(ctx, machine); err != nil {
 		return err
 	}
 
@@ -636,53 +628,10 @@ func (a *Actuator) ensureProviderID(ctx context.Context, machine *machinev1beta1
 	return nil
 }
 
-// handleNodeFinalizer adds finalizer to Node if not already exists
-// it also store the node annotations and labels on Machine annotations
-// upon node deletion
-func (a *Actuator) handleNodeFinalizer(ctx context.Context, machine *machinev1beta1.Machine) error {
-	node, err := a.getNodeByMachine(ctx, machine)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil
-		}
-
-		log.Printf("Failed to find node associated with Machine %s, error: %s", machine.Name, err.Error())
-		return err
-	}
-
-	if node.DeletionTimestamp.IsZero() {
-		// Do not add a finalizer if remediation has not been requested
-		if _, needsRemediation := machine.Annotations[externalRemediationAnnotation]; !needsRemediation {
-			return nil
-		}
-
-		if !utils.StringInList(node.Finalizers, nodeFinalizer) {
-			//add finalizer
-			node.Finalizers = append(node.Finalizers, nodeFinalizer)
-			if err := a.client.Update(ctx, node); err != nil {
-				log.Printf("Failed to add node finalizer to node %s, error: %s", node.Name, err.Error())
-				return err
-			}
-		}
-	} else {
-		//node is in deletion process
-		if utils.StringInList(node.Finalizers, nodeFinalizer) {
-			if err := a.storeAnnotationsAndLabels(ctx, node, machine); err != nil {
-				return err
-			}
-
-			//remove finalizer
-			node.Finalizers = utils.FilterStringFromList(node.Finalizers, nodeFinalizer)
-			if err := a.client.Update(ctx, node); err != nil {
-				log.Printf("Failed to remove node finalizer from %s, error: %s", node.Name, err.Error())
-				return err
-			}
-		}
-	}
-	return nil
-}
-
 // removeNodeFinalizer removes the finalizer from the Node
+// We don't add a finalizer any more unless we are about to delete the Node
+// during remediation, but a previous version of the actuator may have left one
+// behind.
 func (a *Actuator) removeNodeFinalizer(ctx context.Context, machine *machinev1beta1.Machine) error {
 	node, err := a.getNodeByMachine(ctx, machine)
 	if err != nil {
@@ -895,6 +844,14 @@ func (a *Actuator) requestPowerOn(ctx context.Context, baremetalhost *bmh.BareMe
 // deleteMachineNode deletes the node that mapped to specified machine
 func (a *Actuator) deleteNode(ctx context.Context, node *corev1.Node) error {
 	if !node.DeletionTimestamp.IsZero() {
+		// remove finalizer
+		if utils.StringInList(node.Finalizers, nodeFinalizer) {
+			node.Finalizers = utils.FilterStringFromList(node.Finalizers, nodeFinalizer)
+			if err := a.client.Update(ctx, node); err != nil {
+				log.Printf("Failed to remove node finalizer from %s, error: %s", node.Name, err.Error())
+				return err
+			}
+		}
 		return &machineapierrors.RequeueAfterError{RequeueAfter: time.Second * 2}
 	}
 
@@ -947,7 +904,25 @@ func (a *Actuator) remediateIfNeeded(ctx context.Context, machine *machinev1beta
 		return a.removeNodeFinalizer(ctx, machine)
 	}
 
+	node, err := a.getNodeByMachine(ctx, machine)
+
+	if err != nil {
+		if !errors.IsNotFound(err) {
+			log.Printf("Failed to get Node from Machine %s: %s", machine.Name, err.Error())
+			return err
+		}
+	}
+
 	if _, poweredOffForRemediation := machine.Annotations[poweredOffForRemediation]; !poweredOffForRemediation {
+		if !utils.StringInList(node.Finalizers, nodeFinalizer) {
+			// add finalizer
+			node.Finalizers = append(node.Finalizers, nodeFinalizer)
+			if err := a.client.Update(ctx, node); err != nil {
+				log.Printf("Failed to add node finalizer to node %s, error: %s", node.Name, err.Error())
+				return err
+			}
+		}
+
 		if !hasPowerOffRequestAnnotation(baremetalhost) {
 			log.Printf("Found an unhealthy machine, requesting power off. Machine name: %s", machine.Name)
 			return a.requestPowerOff(ctx, baremetalhost)
@@ -963,15 +938,6 @@ func (a *Actuator) remediateIfNeeded(ctx context.Context, machine *machinev1beta
 		return a.addPoweredOffForRemediationAnnotation(ctx, machine)
 	}
 
-	node, err := a.getNodeByMachine(ctx, machine)
-
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			log.Printf("Failed to get Node from Machine %s: %s", machine.Name, err.Error())
-			return err
-		}
-	}
-
 	if !baremetalhost.Status.PoweredOn {
 		if node != nil {
 			log.Printf("Deleting Node %s associated with Machine %s", node.Name, machine.Name)
@@ -982,6 +948,12 @@ func (a *Actuator) remediateIfNeeded(ctx context.Context, machine *machinev1beta
 				in corruption or other issues for applications with singleton requirement. After the host is powered
 				off we know for sure that it is safe to re-assign that workload to other nodes.
 			*/
+			if !node.DeletionTimestamp.IsZero() &&
+				utils.StringInList(node.Finalizers, nodeFinalizer) {
+				if err := a.storeAnnotationsAndLabels(ctx, node, machine); err != nil {
+					return err
+				}
+			}
 			return a.deleteNode(ctx, node)
 		}
 
