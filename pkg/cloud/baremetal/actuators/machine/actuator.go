@@ -291,6 +291,10 @@ func (a *Actuator) Update(ctx context.Context, machine *machinev1beta1.Machine) 
 		return err
 	}
 
+	if err := a.removeNodeFinalizer(ctx, machine); err != nil {
+		return err
+	}
+
 	if !dirty {
 		if err := a.remediateIfNeeded(ctx, machine, host); err != nil {
 			return err
@@ -648,6 +652,7 @@ func (a *Actuator) removeNodeFinalizer(ctx context.Context, machine *machinev1be
 			log.Printf("Failed to remove Node finalizer from %s, error: %s", node.Name, err.Error())
 			return err
 		}
+		return &machineapierrors.RequeueAfterError{}
 	}
 
 	return nil
@@ -843,14 +848,6 @@ func (a *Actuator) requestPowerOn(ctx context.Context, baremetalhost *bmh.BareMe
 // deleteMachineNode deletes the node that mapped to specified machine
 func (a *Actuator) deleteNode(ctx context.Context, node *corev1.Node) error {
 	if !node.DeletionTimestamp.IsZero() {
-		// remove finalizer
-		if utils.StringInList(node.Finalizers, nodeFinalizer) {
-			node.Finalizers = utils.FilterStringFromList(node.Finalizers, nodeFinalizer)
-			if err := a.client.Update(ctx, node); err != nil {
-				log.Printf("Failed to remove node finalizer from %s, error: %s", node.Name, err.Error())
-				return err
-			}
-		}
 		return &machineapierrors.RequeueAfterError{RequeueAfter: time.Second * 2}
 	}
 
@@ -900,7 +897,7 @@ func (a *Actuator) remediateIfNeeded(ctx context.Context, machine *machinev1beta
 	}
 
 	if _, needsRemediation := machine.Annotations[externalRemediationAnnotation]; !needsRemediation {
-		return a.removeNodeFinalizer(ctx, machine)
+		return nil
 	}
 
 	if _, poweredOffForRemediation := machine.Annotations[poweredOffForRemediation]; !poweredOffForRemediation {
