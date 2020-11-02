@@ -831,18 +831,14 @@ func (a *Actuator) requestPowerOn(ctx context.Context, baremetalhost *bmh.BareMe
 		baremetalhost.Annotations = make(map[string]string)
 	}
 
-	if _, powerOffRequestExists := baremetalhost.Annotations[requestPowerOffAnnotation]; !powerOffRequestExists {
-		return &machineapierrors.RequeueAfterError{RequeueAfter: time.Second * 5}
-	}
-
 	delete(baremetalhost.Annotations, requestPowerOffAnnotation)
 
-	err := a.client.Update(ctx, baremetalhost)
-	if err != nil {
+	if err := a.client.Update(ctx, baremetalhost); err != nil {
 		log.Printf("failed to power-off request annotation from %s: %s", baremetalhost.Name, err.Error())
+		return err
 	}
 
-	return err
+	return &machineapierrors.RequeueAfterError{RequeueAfter: time.Second * 5}
 }
 
 // deleteMachineNode deletes the node that mapped to specified machine
@@ -900,6 +896,15 @@ func (a *Actuator) remediateIfNeeded(ctx context.Context, machine *machinev1beta
 		return nil
 	}
 
+	node, err := a.getNodeByMachine(ctx, machine)
+
+	if err != nil {
+		if !errors.IsNotFound(err) {
+			log.Printf("Failed to get Node from Machine %s: %s", machine.Name, err.Error())
+			return err
+		}
+	}
+
 	if _, poweredOffForRemediation := machine.Annotations[poweredOffForRemediation]; !poweredOffForRemediation {
 		if !hasPowerOffRequestAnnotation(baremetalhost) {
 			log.Printf("Found an unhealthy machine, requesting power off. Machine name: %s", machine.Name)
@@ -911,21 +916,6 @@ func (a *Actuator) remediateIfNeeded(ctx context.Context, machine *machinev1beta
 			return nil
 		}
 
-		//we need this annotation to differentiate between unhealthy machine that
-		//needs remediation, and an unhealthy machine that just got remediated
-		return a.addPoweredOffForRemediationAnnotation(ctx, machine)
-	}
-
-	node, err := a.getNodeByMachine(ctx, machine)
-
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			log.Printf("Failed to get Node from Machine %s: %s", machine.Name, err.Error())
-			return err
-		}
-	}
-
-	if !baremetalhost.Status.PoweredOn {
 		if node != nil {
 			log.Printf("Deleting Node %s associated with Machine %s", node.Name, machine.Name)
 			/*
@@ -941,7 +931,14 @@ func (a *Actuator) remediateIfNeeded(ctx context.Context, machine *machinev1beta
 			return a.deleteNode(ctx, node)
 		}
 
-		// node is deleted, we can power on the host
+		//we need this annotation to differentiate between unhealthy machine that
+		//needs remediation, and an unhealthy machine that just got remediated
+		return a.addPoweredOffForRemediationAnnotation(ctx, machine)
+	}
+
+	// here we know that host has been powered off and node has been deleted
+	if hasPowerOffRequestAnnotation(baremetalhost) {
+		// we can now power host back on
 		log.Printf("Requesting Host %s power on for Machine %s",
 			baremetalhost.Name, machine.Name)
 		return a.requestPowerOn(ctx, baremetalhost)

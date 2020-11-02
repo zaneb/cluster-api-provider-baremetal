@@ -2029,44 +2029,36 @@ func TestRemediation(t *testing.T) {
 		t.Fail()
 	}
 
-	host.Status.PoweredOn = false
-	c.Update(context.TODO(), host)
-
+	// host is not yet powered off, nothing should happen
 	err = actuator.Update(context.TODO(), machine)
 	if err != nil {
 		t.Errorf("unexpected error %v", err)
 	}
 
-	machine = &machinev1beta1.Machine{}
-	c.Get(context.TODO(), machineNamespacedName, machine)
-
-	if _, exists := machine.Annotations[poweredOffForRemediation]; !exists {
-		t.Log("Expected powered-off-for-remediation annotation to exist on machine but none found")
-		t.Fail()
-	}
+	host.Status.PoweredOn = false
+	c.Update(context.TODO(), host)
 
 	node = &corev1.Node{}
-	err = c.Get(context.TODO(), nodeNamespacedName, node)
+	c.Get(context.TODO(), nodeNamespacedName, node)
 	nodeBackup := node.DeepCopy()
 
 	machine = &machinev1beta1.Machine{}
 	c.Get(context.TODO(), machineNamespacedName, machine)
 	err = actuator.Update(context.TODO(), machine)
-	if err == nil {
-		t.Errorf("expected a requeue err but err was nil")
-	} else {
-		switch err.(type) {
-		case *machineapierrors.RequeueAfterError:
-			break
-		default:
-			t.Errorf("unexpected error %v", err)
-		}
-	}
+	expectRequetAfterError(err, t)
 
 	node = &corev1.Node{}
 	err = c.Get(context.TODO(), nodeNamespacedName, node)
 	if !errors.IsNotFound(err) {
 		t.Log("Expected node to be deleted")
+		t.Fail()
+	}
+
+	machine = &machinev1beta1.Machine{}
+	c.Get(context.TODO(), machineNamespacedName, machine)
+
+	if _, exists := machine.Annotations[poweredOffForRemediation]; exists {
+		t.Log("Expected powered-off-for-remediation annotation to not exist on machine but found one")
 		t.Fail()
 	}
 
@@ -2092,6 +2084,19 @@ func TestRemediation(t *testing.T) {
 	//fake client won't delete the node even though it has no finalizers anymore, so we delete it
 	err = c.Delete(context.TODO(), nodeBackup)
 	err = c.Delete(context.TODO(), node)
+
+	err = actuator.Update(context.TODO(), machine)
+	if err != nil {
+		t.Errorf("unexpected error %v", err)
+	}
+
+	machine = &machinev1beta1.Machine{}
+	c.Get(context.TODO(), machineNamespacedName, machine)
+
+	if _, exists := machine.Annotations[poweredOffForRemediation]; !exists {
+		t.Log("Expected powered-off-for-remediation annotation to exist on machine but none found")
+		t.Fail()
+	}
 
 	err = actuator.Update(context.TODO(), machine)
 	host = &bmh.BareMetalHost{}
