@@ -250,7 +250,7 @@ func (a *Actuator) Update(ctx context.Context, machine *machinev1beta1.Machine) 
 		return err
 	}
 
-	if err := a.handleNodeFinalizer(ctx, machine); err != nil {
+	if err := a.removeNodeFinalizer(ctx, machine); err != nil {
 		return err
 	}
 
@@ -473,7 +473,10 @@ func (a *Actuator) chooseHost(ctx context.Context, machine *machinev1beta1.Machi
 			// the host is being deleted
 			continue
 		}
-		if host.Status.Provisioning.State != bmh.StateReady {
+		switch host.Status.Provisioning.State {
+		case bmh.StateReady, bmh.StateAvailable:
+			// the host is available to be provisioned
+		default:
 			// the host has not completed introspection or has an error
 			continue
 		}
@@ -697,48 +700,9 @@ func (a *Actuator) ensureNodeProviderID(ctx context.Context, machine *machinev1b
 	return nil
 }
 
-// handleNodeFinalizer adds finalizer to Node if not already exists
-// it also store the node annotations and labels on Machine annotations
-// upon node deletion
-func (a *Actuator) handleNodeFinalizer(ctx context.Context, machine *machinev1beta1.Machine) error {
-	node, err := a.getNodeByMachine(ctx, machine)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil
-		}
-
-		log.Printf("Failed to find node associated with Machine %s, error: %s", machine.Name, err.Error())
-		return err
-	}
-
-	if node.DeletionTimestamp.IsZero() {
-		if !utils.StringInList(node.Finalizers, nodeFinalizer) {
-			//add finalizer
-			node.Finalizers = append(node.Finalizers, nodeFinalizer)
-			if err := a.client.Update(ctx, node); err != nil {
-				log.Printf("Failed to add node finalizer to node %s, error: %s", node.Name, err.Error())
-				return err
-			}
-		}
-	} else {
-		//node is in deletion process
-		if utils.StringInList(node.Finalizers, nodeFinalizer) {
-			if err := a.storeAnnotationsAndLabels(ctx, node, machine); err != nil {
-				return err
-			}
-
-			//remove finalizer
-			node.Finalizers = utils.FilterStringFromList(node.Finalizers, nodeFinalizer)
-			if err := a.client.Update(ctx, node); err != nil {
-				log.Printf("Failed to remove node finalizer from %s, error: %s", node.Name, err.Error())
-				return err
-			}
-		}
-	}
-	return nil
-}
-
 // removeNodeFinalizer removes the finalizer from the Node
+// We don't add a finalizer any more, but a previous version of the actuator
+// may have left one behind.
 func (a *Actuator) removeNodeFinalizer(ctx context.Context, machine *machinev1beta1.Machine) error {
 	node, err := a.getNodeByMachine(ctx, machine)
 	if err != nil {
@@ -756,6 +720,7 @@ func (a *Actuator) removeNodeFinalizer(ctx context.Context, machine *machinev1be
 			log.Printf("Failed to remove Node finalizer from %s, error: %s", node.Name, err.Error())
 			return err
 		}
+		return &machineapierrors.RequeueAfterError{}
 	}
 
 	return nil
@@ -1059,6 +1024,9 @@ func (a *Actuator) remediateIfNeeded(ctx context.Context, machine *machinev1beta
 				in corruption or other issues for applications with singleton requirement. After the host is powered
 				off we know for sure that it is safe to re-assign that workload to other nodes.
 			*/
+			if err := a.storeAnnotationsAndLabels(ctx, node, machine); err != nil {
+				return err
+			}
 			return a.deleteNode(ctx, node)
 		}
 
@@ -1089,8 +1057,8 @@ func (a *Actuator) storeAnnotationsAndLabels(ctx context.Context, node *corev1.N
 	if err != nil {
 		log.Printf("Failed to marshal node %s annotations associated with Machine %s: %s",
 			node.Name, machine.Name, err.Error())
-		//if marsahl fails we want to continue without blocking on this, as this error
-		//not likely to be resolved in the next run
+		// if marshal fails we want to continue without blocking on this, as this error
+		// not likely to be resolved in the next run
 	}
 
 	marshaledLabels, err := marshal(node.Labels)
@@ -1099,9 +1067,10 @@ func (a *Actuator) storeAnnotationsAndLabels(ctx context.Context, node *corev1.N
 			node.Name, machine.Name, err.Error())
 	}
 
-	if len(marshaledAnnotations) > 0 || len(marshaledLabels) > 0 {
-		machine.Annotations[nodeLabelsBackupAnnotation] = marshaledLabels
+	if machine.Annotations[nodeAnnotationsBackupAnnotation] != marshaledAnnotations ||
+		machine.Annotations[nodeLabelsBackupAnnotation] != marshaledLabels {
 		machine.Annotations[nodeAnnotationsBackupAnnotation] = marshaledAnnotations
+		machine.Annotations[nodeLabelsBackupAnnotation] = marshaledLabels
 
 		err = a.client.Update(ctx, machine)
 		if err != nil {
