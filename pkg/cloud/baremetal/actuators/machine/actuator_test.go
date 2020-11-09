@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	fakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -2172,6 +2173,159 @@ func TestRemediation(t *testing.T) {
 	if hasPowerOffRequestAnnotation(host) {
 		t.Log("Expected reboot annotation to be removed but it's still there, maybe reboot loops?")
 		t.Fail()
+	}
+}
+
+func TestIsPowerOnTimedOut(t *testing.T) {
+	machine, _ := getMachine("machine1")
+	// no annotations
+	if isPowerOnTimedOut(machine) {
+		t.Errorf("Expected 'false' when annotations is nil")
+	}
+	machine.Annotations = make(map[string]string)
+	machine.Annotations["something"] = "doesn't matter"
+	if isPowerOnTimedOut(machine) {
+		t.Errorf("Expected 'false' when annotation doesn't exist")
+	}
+	machine.Annotations[powerOnWillTimeoutAtAnnotation] = "not a timestamp"
+	if isPowerOnTimedOut(machine) {
+		t.Errorf("Expected 'false' when annotation is not a valid timestamp")
+	}
+	machine.Annotations[powerOnWillTimeoutAtAnnotation] = time.Now().Add(24 * time.Hour).Format(time.RFC3339)
+	if isPowerOnTimedOut(machine) {
+		t.Errorf("Expected 'false' when timeout has not passed yet")
+	}
+	machine.Annotations[powerOnWillTimeoutAtAnnotation] = time.Now().Add(-24 * time.Hour).Format(time.RFC3339)
+	if !isPowerOnTimedOut(machine) {
+		t.Errorf("Expected 'true' as timeout has passed already")
+	}
+}
+
+func TestGetMhcByMachine(t *testing.T) {
+	scheme := runtime.NewScheme()
+	machinev1beta1.AddToScheme(scheme)
+	corev1.AddToScheme(scheme)
+
+	c := fakeclient.NewFakeClientWithScheme(scheme)
+
+	actuator, err := NewActuator(ActuatorParams{
+		Client: c,
+	})
+	if err != nil {
+		t.Error(err)
+	}
+	machine, _ := getMachine("machine")
+	machine.Labels = map[string]string{
+		"labelName1": "labelValue1",
+		"labelName2": "labelValue2",
+		"labelName3": "labelValue3",
+	}
+	mhc1 := &machinev1beta1.MachineHealthCheck{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "mhc-different-ns",
+			Namespace: machine.GetNamespace() + "-something",
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind: "MachineHealthCheck",
+		},
+		Spec: machinev1beta1.MachineHealthCheckSpec{
+			Selector: metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"labelName1": "labelValue1",
+					"labelName2": "labelValue2",
+				},
+			},
+		},
+	}
+	mhc2 := &machinev1beta1.MachineHealthCheck{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "mhc-not-matching-selector",
+			Namespace: machine.GetNamespace(),
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind: "MachineHealthCheck",
+		},
+		Spec: machinev1beta1.MachineHealthCheckSpec{
+			Selector: metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"labelName1": "labelValue1",
+					"labelName2": "not-matching",
+				},
+			},
+		},
+	}
+	mhc3 := &machinev1beta1.MachineHealthCheck{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "mhc-matching-selector",
+			Namespace: machine.GetNamespace(),
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind: "MachineHealthCheck",
+		},
+		Spec: machinev1beta1.MachineHealthCheckSpec{
+			Selector: metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"labelName1": "labelValue1",
+					"labelName3": "labelValue3",
+				},
+			},
+		},
+	}
+
+	c.Create(context.TODO(), machine)
+	foundMhc := actuator.getMhcByMachine(machine)
+	if foundMhc != nil {
+		t.Errorf("No MHC expected: found: %v", foundMhc)
+	}
+	c.Create(context.TODO(), mhc1)
+	foundMhc = actuator.getMhcByMachine(machine)
+	if foundMhc != nil {
+		t.Errorf("No MHC expected: found: %v", foundMhc.GetName())
+	}
+	c.Create(context.TODO(), mhc2)
+	foundMhc = actuator.getMhcByMachine(machine)
+	if foundMhc != nil {
+		t.Errorf("No MHC expected: found: %v", foundMhc.GetName())
+	}
+	c.Create(context.TODO(), mhc3)
+	foundMhc = actuator.getMhcByMachine(machine)
+	if foundMhc == nil {
+		t.Errorf("MHC not found; expected: %v", mhc3.GetName())
+	} else if foundMhc.GetName() != mhc3.GetName() {
+		t.Errorf("unexpected MHC found; expected: %v found: %v", mhc3.GetName(), foundMhc.GetName())
+	}
+}
+
+func TestCanReprovision(t *testing.T) {
+	host, _ := getBareMetalHost("host1")
+	machine, _ := getMachine("machine1")
+
+	host.Spec.ExternallyProvisioned = false
+	machine.Labels = map[string]string{
+		machineRoleLabel: "worker",
+	}
+	// create an owner ref, let's just use the BMH for that, it doesn't reallyt matter here
+	ownerRef := *metav1.NewControllerRef(host, schema.GroupVersionKind{Group: "group", Version: "v1", Kind: "MachineController"})
+	machine.OwnerReferences = []metav1.OwnerReference{ownerRef}
+	if !canReprovision(machine, host) {
+		t.Error("All reaquirements should be met")
+	}
+
+	machine.Labels[machineRoleLabel] = machineRoleMaster
+	if canReprovision(machine, host) {
+		t.Error("Machine role is master")
+	}
+
+	machine.Labels[machineRoleLabel] = "something"
+	host.Spec.ExternallyProvisioned = true
+	if canReprovision(machine, host) {
+		t.Error("BMH is externally provisioned")
+	}
+
+	host.Spec.ExternallyProvisioned = false
+	machine.OwnerReferences = []metav1.OwnerReference{}
+	if canReprovision(machine, host) {
+		t.Error("Machine is not owned by a controller")
 	}
 }
 
