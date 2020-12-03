@@ -47,14 +47,19 @@ const (
 	ProviderName = "baremetal"
 	// HostAnnotation is the key for an annotation that should go on a Machine to
 	// reference what BareMetalHost it corresponds to.
-	HostAnnotation                  = "metal3.io/BareMetalHost"
-	requeueAfter                    = time.Second * 30
-	externalRemediationAnnotation   = "host.metal3.io/external-remediation"
-	poweredOffForRemediation        = "remediation.metal3.io/powered-off-for-remediation"
-	requestPowerOffAnnotation       = "reboot.metal3.io/capbm-requested-power-off"
-	nodeLabelsBackupAnnotation      = "remediation.metal3.io/node-labels-backup"
-	nodeAnnotationsBackupAnnotation = "remediation.metal3.io/node-annotations-backup"
-	nodeFinalizer                   = "metal3.io/capbm"
+	HostAnnotation                   = "metal3.io/BareMetalHost"
+	requeueAfter                     = time.Second * 30
+	externalRemediationAnnotation    = "host.metal3.io/external-remediation"
+	poweredOffForRemediation         = "remediation.metal3.io/powered-off-for-remediation"
+	requestPowerOffAnnotation        = "reboot.metal3.io/capbm-requested-power-off"
+	nodeLabelsBackupAnnotation       = "remediation.metal3.io/node-labels-backup"
+	nodeAnnotationsBackupAnnotation  = "remediation.metal3.io/node-annotations-backup"
+	nodeFinalizer                    = "metal3.io/capbm"
+	machineRoleLabel                 = "machine.openshift.io/cluster-api-machine-role"
+	machineRoleMaster                = "master"
+	annotationTimestampFormat        = time.RFC3339
+	remediationPowerOnDefaultTimeout = 20 * time.Minute
+	powerOnWillTimeoutAtAnnotation   = "remediation.metal3.io/power-on-will-timeout-at"
 )
 
 // Add RBAC rules to access cluster-api resources
@@ -861,6 +866,7 @@ func (a *Actuator) deleteRemediationAnnotations(ctx context.Context, machine *ma
 
 	delete(machine.Annotations, poweredOffForRemediation)
 	delete(machine.Annotations, externalRemediationAnnotation)
+	delete(machine.Annotations, powerOnWillTimeoutAtAnnotation)
 
 	if err := a.client.Update(ctx, machine); err != nil {
 		log.Printf("Failed to delete annotations of Machine: %s", machine.Name)
@@ -915,23 +921,100 @@ func (a *Actuator) requestPowerOff(ctx context.Context, baremetalhost *bmh.BareM
 }
 
 //requestPowerOn removes requestPowerOffAnnotation from baremetalhost which signals BMO to power on the machine
-func (a *Actuator) requestPowerOn(ctx context.Context, baremetalhost *bmh.BareMetalHost) error {
+func (a *Actuator) requestPowerOn(ctx context.Context, machine *machinev1beta1.Machine, baremetalhost *bmh.BareMetalHost) error {
+	if machine.Annotations == nil {
+		machine.Annotations = make(map[string]string)
+	}
+	mhc := a.getMhcByMachine(machine)
+	timeout := remediationPowerOnDefaultTimeout
+	if mhc != nil && mhc.Spec.NodeStartupTimeout.Duration != 0*time.Second {
+		timeout = mhc.Spec.NodeStartupTimeout.Duration
+	}
+	machine.Annotations[powerOnWillTimeoutAtAnnotation] = time.Now().Add(timeout).Format(annotationTimestampFormat)
+
+	if err := a.client.Update(ctx, machine); err != nil {
+		return gherrors.Wrapf(err, "failed to add remediation power on timestamp annotation to %s", machine.Name)
+	}
+
 	if baremetalhost.Annotations == nil {
 		baremetalhost.Annotations = make(map[string]string)
 	}
 
-	if _, powerOffRequestExists := baremetalhost.Annotations[requestPowerOffAnnotation]; !powerOffRequestExists {
-		return &machineapierrors.RequeueAfterError{RequeueAfter: time.Second * 5}
-	}
-
 	delete(baremetalhost.Annotations, requestPowerOffAnnotation)
 
-	err := a.client.Update(ctx, baremetalhost)
-	if err != nil {
+	if err := a.client.Update(ctx, baremetalhost); err != nil {
 		log.Printf("failed to power-off request annotation from %s: %s", baremetalhost.Name, err.Error())
+		return err
 	}
 
-	return err
+	return &machineapierrors.RequeueAfterError{RequeueAfter: time.Second * 5}
+}
+
+// isPowerOnTimedOut checks if the current time is after timestamp stored in machine annotation powerOnWillTimeoutAtAnnotation
+func isPowerOnTimedOut(machine *machinev1beta1.Machine) bool {
+	annotations := machine.Annotations
+	if annotations == nil {
+		return false
+	}
+	waitUntilString, exist := annotations[powerOnWillTimeoutAtAnnotation]
+	if !exist {
+		log.Printf("Annotation %q not found on machine %q, assuming remediation has not timed out", powerOnWillTimeoutAtAnnotation, machine.Name)
+		return false
+	}
+	waitUntil, err := time.Parse(annotationTimestampFormat, waitUntilString)
+	if err != nil {
+		log.Printf("Unable to parse time from annotation %q on machine %q, assuming remediation has not timed out", powerOnWillTimeoutAtAnnotation, machine.Name)
+		return false
+	}
+	return time.Now().After(waitUntil)
+}
+
+// canReprovision checks if machine can be reprovisioned.
+// Machine can be reprovisione only if all of these conditions are met:
+//  * baremetalhost is not externally provisioned
+//  * machine is owned by a controller
+//  * machine role is not master
+func canReprovision(machine *machinev1beta1.Machine, baremetalhost *bmh.BareMetalHost) bool {
+	if baremetalhost.Spec.ExternallyProvisioned {
+		log.Printf("Reprovisioning of machine %q not allowed: BMH %q is externally provisioned", machine.Name, baremetalhost.Name)
+		return false
+	}
+	if metav1.GetControllerOf(machine) == nil {
+		log.Printf("Reprovisioning of machine %q not allowed: no owning controller", machine.Name)
+		return false
+	}
+	if machine.Labels[machineRoleLabel] == machineRoleMaster {
+		log.Printf("Reprovisioning of machine %q not allowed: has master role", machine.Name)
+		return false
+	}
+	return true
+}
+
+// getMhcByMachine returns MachineHealthCheck object responsible for given machine based on its label selectors
+func (a *Actuator) getMhcByMachine(machine *machinev1beta1.Machine) *machinev1beta1.MachineHealthCheck {
+	mhcOptions := client.ListOptions{
+		// Machine and MHC has to be in the same namespace
+		Namespace: machine.GetNamespace(),
+	}
+
+	mhcList := &machinev1beta1.MachineHealthCheckList{}
+	if err := a.client.List(context.TODO(), mhcList, &mhcOptions); err != nil {
+		log.Printf("Unable to get MHC objects: %s", err)
+		return nil
+	}
+
+	machineLabels := labels.Set(machine.Labels)
+	for _, mhc := range mhcList.Items {
+		selector, err := metav1.LabelSelectorAsSelector(&mhc.Spec.Selector)
+		if err != nil {
+			log.Printf("Unable to get machine selector from MHC %q: %s", mhc.GetName(), err)
+			continue
+		}
+		if selector.Matches(machineLabels) {
+			return &mhc
+		}
+	}
+	return nil
 }
 
 // deleteMachineNode deletes the node that mapped to specified machine
@@ -989,6 +1072,15 @@ func (a *Actuator) remediateIfNeeded(ctx context.Context, machine *machinev1beta
 		return nil
 	}
 
+	node, err := a.getNodeByMachine(ctx, machine)
+
+	if err != nil {
+		if !errors.IsNotFound(err) {
+			log.Printf("Failed to get Node from Machine %s: %s", machine.Name, err.Error())
+			return err
+		}
+	}
+
 	if _, poweredOffForRemediation := machine.Annotations[poweredOffForRemediation]; !poweredOffForRemediation {
 		if !hasPowerOffRequestAnnotation(baremetalhost) {
 			log.Printf("Found an unhealthy machine, requesting power off. Machine name: %s", machine.Name)
@@ -1000,21 +1092,6 @@ func (a *Actuator) remediateIfNeeded(ctx context.Context, machine *machinev1beta
 			return nil
 		}
 
-		//we need this annotation to differentiate between unhealthy machine that
-		//needs remediation, and an unhealthy machine that just got remediated
-		return a.addPoweredOffForRemediationAnnotation(ctx, machine)
-	}
-
-	node, err := a.getNodeByMachine(ctx, machine)
-
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			log.Printf("Failed to get Node from Machine %s: %s", machine.Name, err.Error())
-			return err
-		}
-	}
-
-	if !baremetalhost.Status.PoweredOn {
 		if node != nil {
 			log.Printf("Deleting Node %s associated with Machine %s", node.Name, machine.Name)
 			/*
@@ -1030,14 +1107,27 @@ func (a *Actuator) remediateIfNeeded(ctx context.Context, machine *machinev1beta
 			return a.deleteNode(ctx, node)
 		}
 
-		// node is deleted, we can power on the host
+		//we need this annotation to differentiate between unhealthy machine that
+		//needs remediation, and an unhealthy machine that just got remediated
+		return a.addPoweredOffForRemediationAnnotation(ctx, machine)
+	}
+
+	// here we know that host has been powered off and node has been deleted
+	if hasPowerOffRequestAnnotation(baremetalhost) {
+		// we can now power host back on
 		log.Printf("Requesting Host %s power on for Machine %s",
 			baremetalhost.Name, machine.Name)
-		return a.requestPowerOn(ctx, baremetalhost)
+		return a.requestPowerOn(ctx, machine, baremetalhost)
 	}
 
 	//node is still not running, so we requeue
 	if node == nil {
+		if canReprovision(machine, baremetalhost) && isPowerOnTimedOut(machine) {
+			log.Printf("Remediation (power on action) of machine %q takes longer than configured timeout. Deleting the machine.", machine.Name)
+			if err := a.client.Delete(ctx, machine); err != nil {
+				return gherrors.Wrapf(err, "unable to delete machine %q", machine.Name)
+			}
+		}
 		return &machineapierrors.RequeueAfterError{RequeueAfter: time.Second * 5}
 	}
 
